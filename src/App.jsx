@@ -957,8 +957,8 @@ export default function App() {
       <style>{`*{box-sizing:border-box;}button{transition:all 0.15s;font-family:inherit;}button:hover{opacity:0.82;}@keyframes spin{to{transform:rotate(360deg);}}input:focus,textarea:focus,select:focus{outline:none;border-color:${RED}!important;box-shadow:0 0 0 3px rgba(192,0,26,0.1);}`}</style>
 
       <nav style={{background:"#fff",borderBottom:"2px solid "+RED_BORDER,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 8px rgba(192,0,26,0.07)"}}>
-        <div style={{maxWidth:1300,margin:"0 auto",padding:"0 24px",display:"flex",alignItems:"center",height:58,gap:4}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginRight:24}}>
+        <div style={{maxWidth:1300,margin:"0 auto",padding:"0 16px",display:"flex",alignItems:"center",height:58,gap:4,overflowX:"auto",whiteSpace:"nowrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginRight:16,flexShrink:0}}>
             <div style={{width:34,height:34,background:RED,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>
               <span style={{color:"#fff",fontSize:17}}>📊</span>
             </div>
@@ -970,7 +970,7 @@ export default function App() {
 
           {nav.map(item=>(
             <button key={item.key}
-              style={{padding:"7px 16px",borderRadius:8,border:"none",background:page===item.key?RED:"transparent",color:page===item.key?"#fff":"#374151",fontSize:13,fontWeight:600,cursor:"pointer"}}
+              style={{padding:"7px 12px",borderRadius:8,border:"none",background:page===item.key?RED:"transparent",color:page===item.key?"#fff":"#374151",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}
               onClick={()=>setPage(item.key)}>
               {item.label}
             </button>
@@ -978,7 +978,7 @@ export default function App() {
 
           <div style={{flex:1}}/>
 
-          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
             {/* API 상태 (관리자만) */}
             {isAdmin&&(status?(
               <span style={{fontSize:12,color:status.color,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
