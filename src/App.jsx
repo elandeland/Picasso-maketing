@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
+const SUPABASE_KEY = "여기에_anon_public_key_붙여넣기"; // ⚠️ secret key 말고 anon public key를 넣어주세요
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -405,8 +405,13 @@ function Settings({settings,refreshSettings,currentUser}) {
 // ════════════════════════════════════════════════════════
 // 콘텐츠 등록 모달
 // ════════════════════════════════════════════════════════
-function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
-  const [form,setForm]=useState({url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:""});
+function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
+  const isEditMode = !!editItem;
+  const [form,setForm]=useState(()=> editItem ? {
+    url:editItem.url||"", title:editItem.title||"", campaign:editItem.campaign||"",
+    manager:editItem.manager||"", uploadDate:editItem.uploadDate||"", memo:editItem.memo||"",
+    manualViews:editItem.views||"", manualLikes:editItem.likes||"", manualComments:editItem.comments||"",
+  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:""});
   const [loading,setLoading]=useState(false);
   const [saving,setSaving]=useState(false);
   const [fetchErr,setFetchErr]=useState("");
@@ -442,11 +447,11 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
         else if(isIG)s=await fetchInstagramStats(form.url,apifyToken);
       }catch(e){setFetchErr(e.message);setSaving(false);return;}
     }
-    const newItem={
-      id:Date.now(),url:form.url.trim(),
+    const itemData={
+      url:form.url.trim(),
       platform:detected||"Instagram Post",
       title:s?.title||form.title||"",
-      thumbnail:s?.thumbnail||"",
+      thumbnail:s?.thumbnail||editItem?.thumbnail||"",
       campaign:form.campaign,
       manager:form.manager,
       uploadDate:form.uploadDate||s?.publishedAt||new Date().toISOString().slice(0,10),
@@ -454,11 +459,18 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
       views:s?.views||parseInt(form.manualViews)||0,
       likes:s?.likes||parseInt(form.manualLikes)||0,
       comments:s?.comments||parseInt(form.manualComments)||0,
-      views24h:0,views7d:0,status:"성공",
+      views24h:editItem?.views24h||0,views7d:editItem?.views7d||0,status:"성공",
     };
     try{
-      await sb("contents","POST",contentToDB(newItem));
-      onAdd(newItem);
+      if(isEditMode){
+        const updated={...itemData,id:editItem.id};
+        await sb("contents","PATCH",contentToDB(updated),`?id=eq.${editItem.id}`);
+        onUpdate(updated);
+      }else{
+        const newItem={...itemData,id:Date.now()};
+        await sb("contents","POST",contentToDB(newItem));
+        onAdd(newItem);
+      }
       setSaving(false);onClose();
     }catch(e){
       setFetchErr("저장 실패: "+e.message);
@@ -501,8 +513,8 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
       <div style={{background:"#fff",borderRadius:18,width:"92%",maxWidth:920,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(192,0,26,0.18)"}}>
         <div style={{padding:"22px 28px 18px",borderBottom:"2px solid "+RED_BORDER,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <h2 style={{margin:0,fontSize:20,fontWeight:800}}>콘텐츠 등록</h2>
-            <p style={{margin:"4px 0 0",fontSize:13,color:RED}}>URL을 붙여넣으면 플랫폼 자동 인식 + 데이터 자동 수집</p>
+            <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{isEditMode?"콘텐츠 수정":"콘텐츠 등록"}</h2>
+            <p style={{margin:"4px 0 0",fontSize:13,color:RED}}>{isEditMode?"내용을 수정하고 저장하세요.":"URL을 붙여넣으면 플랫폼 자동 인식 + 데이터 자동 수집"}</p>
           </div>
           <button style={{background:"none",border:"none",fontSize:22,color:"#9CA3AF",cursor:"pointer"}} onClick={onClose}>✕</button>
         </div>
@@ -557,10 +569,10 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
 
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"0 28px 24px"}}>
           <button style={C.btnOutline} onClick={onClose}>취소</button>
-          <button style={C.btnOutline} onClick={()=>handleSave(false)} disabled={saving}>저장만 하기</button>
-          <button style={{...C.btnRed,opacity:saving?0.6:1,display:"flex",alignItems:"center",gap:8}} onClick={()=>handleSave(true)} disabled={saving}>
+          {!isEditMode&&<button style={C.btnOutline} onClick={()=>handleSave(false)} disabled={saving}>저장만 하기</button>}
+          <button style={{...C.btnRed,opacity:saving?0.6:1,display:"flex",alignItems:"center",gap:8}} onClick={()=>handleSave(!isEditMode)} disabled={saving}>
             {saving&&<Spinner size={14}/>}
-            {saving?"저장 중...":"저장 + 최초 지표 가져오기"}
+            {saving?"저장 중...":isEditMode?"수정 사항 저장":"저장 + 최초 지표 가져오기"}
           </button>
         </div>
       </div>
@@ -672,7 +684,7 @@ function Dashboard({contents,onOpenRegister}) {
 // ════════════════════════════════════════════════════════
 // 콘텐츠 목록
 // ════════════════════════════════════════════════════════
-function ContentsList({contents,onOpenRegister}) {
+function ContentsList({contents,onOpenRegister,onEdit,onDelete}) {
   const [search,setSearch]=useState("");
   const [pfFilter,setPfFilter]=useState("전체");
   const [stFilter,setStFilter]=useState("전체");
@@ -773,7 +785,7 @@ function ContentsList({contents,onOpenRegister}) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{borderBottom:"2px solid "+RED_BORDER,background:RED_LIGHT}}>
-                {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","링크"].map(h=>(
+                {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","액션"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:RED,textAlign:h==="콘텐츠"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -804,7 +816,11 @@ function ContentsList({contents,onOpenRegister}) {
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
-                    <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 9px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
+                    <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                      <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 8px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
+                      <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer",fontWeight:600}}>✏️</button>
+                      <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer",fontWeight:600}}>🗑</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -995,6 +1011,7 @@ export default function App() {
   });
   const [page,setPage]=useState("dashboard");
   const [showRegister,setShowRegister]=useState(false);
+  const [editItem,setEditItem]=useState(null);
   const [contents,setContents]=useState([]);
   const [settings,setSettings]=useState({ytApiKey:"",apifyToken:""});
 
@@ -1049,6 +1066,16 @@ export default function App() {
     return null;
   };
   const status=isAdmin?apiStatus():null;
+
+  const handleDeleteContent = async (item) => {
+    if (!window.confirm(`"${item.title||item.url}"\n정말 삭제하시겠습니까?`)) return;
+    try {
+      await sb("contents","DELETE",null,`?id=eq.${item.id}`);
+      setContents(prev => prev.filter(c => c.id !== item.id));
+    } catch(e) {
+      alert("삭제 실패: " + e.message);
+    }
+  };
 
   return(
     <div style={{minHeight:"100vh",background:"#FDF8F8",fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
@@ -1105,13 +1132,14 @@ export default function App() {
 
       <main style={{maxWidth:1300,margin:"0 auto",padding:"28px 24px"}}>
         {page==="dashboard"&&<Dashboard contents={contents} onOpenRegister={()=>setShowRegister(true)}/>}
-        {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)}/>}
+        {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)} onEdit={item=>setEditItem(item)} onDelete={handleDeleteContent}/>}
         {page==="campaigns"&&<Campaigns contents={contents}/>}
         {page==="members"&&<MemberAdmin users={users} refreshUsers={loadAll} currentUser={currentUser}/>}
         {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser}/>}
       </main>
 
       {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
+      {editItem&&<RegisterModal editItem={editItem} onUpdate={updated=>setContents(prev=>prev.map(c=>c.id===updated.id?updated:c))} onClose={()=>setEditItem(null)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
     </div>
   );
 }
