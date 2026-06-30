@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 
-// ─── Supabase 설정
-const SUPABASE_URL = "여기에_Project_URL_붙여넣기";
-const SUPABASE_KEY = "여기에_anon_key_붙여넣기";
+// ════════════════════════════════════════════════════════
+// Supabase 설정 — 본인 프로젝트 값으로 교체하세요
+// ════════════════════════════════════════════════════════
+const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -11,26 +13,43 @@ const sb = async (table, method="GET", body=null, query="") => {
       "apikey": SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
-      "Prefer": method==="POST" ? "return=representation" : method==="PATCH" ? "return=representation" : "",
+      "Prefer": (method==="POST"||method==="PATCH") ? "return=representation" : "",
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`Supabase 오류: ${res.status}`);
+  if (!res.ok) {
+    const errText = await res.text().catch(()=>"");
+    throw new Error(`Supabase 오류 (${res.status}): ${errText}`);
+  }
   return method==="DELETE" ? true : res.json();
 };
 
+// ── DB 행 ↔ 앱 객체 변환 (snake_case ↔ camelCase)
+const contentFromDB = (r) => ({
+  id:r.id, url:r.url, platform:r.platform, title:r.title, thumbnail:r.thumbnail,
+  campaign:r.campaign, manager:r.manager, uploadDate:r.upload_date, memo:r.memo,
+  views:r.views, likes:r.likes, comments:r.comments,
+  views24h:r.views_24h, views7d:r.views_7d, status:r.status,
+});
+const contentToDB = (c) => ({
+  id:c.id, url:c.url, platform:c.platform, title:c.title, thumbnail:c.thumbnail,
+  campaign:c.campaign, manager:c.manager, upload_date:c.uploadDate, memo:c.memo,
+  views:c.views, likes:c.likes, comments:c.comments,
+  views_24h:c.views24h, views_7d:c.views7d, status:c.status,
+});
+const userFromDB = (r) => ({ id:r.id, name:r.name, email:r.email, password:r.password, role:r.role, status:r.status, joinedAt:r.joined_at });
+
+// ════════════════════════════════════════════════════════
+// 컬러 토큰
+// ════════════════════════════════════════════════════════
 const RED = "#C0001A";
 const RED_DARK = "#A0001A";
 const RED_LIGHT = "#FFF0F2";
 const RED_BORDER = "#F5C2C8";
 
-const INIT_USERS = [
-  { id:1, name:"관리자", email:"admin@eland.com", password:"1234", role:"admin", status:"승인", joinedAt:"2024-01-01" },
-];
-
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // YouTube API
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 const extractYouTubeId = (url="") => {
   const m1=url.match(/[?&]v=([^&]+)/); if(m1)return m1[1];
   const m2=url.match(/youtu\.be\/([^?&]+)/); if(m2)return m2[1];
@@ -38,7 +57,6 @@ const extractYouTubeId = (url="") => {
   const m4=url.match(/embed\/([^?&]+)/); if(m4)return m4[1];
   return null;
 };
-
 const fetchYouTubeStats = async (url, apiKey) => {
   const videoId = extractYouTubeId(url);
   if (!videoId) throw new Error("YouTube URL에서 영상 ID를 찾을 수 없습니다.");
@@ -57,10 +75,9 @@ const fetchYouTubeStats = async (url, apiKey) => {
   };
 };
 
-// ══════════════════════════════════════════════════════════
-// Apify Instagram 스크래퍼
-// ══════════════════════════════════════════════════════════
-// URL에서 계정 username과 shortCode 추출
+// ════════════════════════════════════════════════════════
+// Apify Instagram (프로필 기반 — 조회수 포함)
+// ════════════════════════════════════════════════════════
 const extractInstagramInfo = (url="") => {
   const userMatch = url.match(/instagram\.com\/([^/?]+)/);
   const username = userMatch ? userMatch[1] : null;
@@ -73,7 +90,6 @@ const fetchInstagramStats = async (url, apifyToken) => {
   const { username, shortCode } = extractInstagramInfo(url);
   if (!username) throw new Error("URL에서 계정 정보를 찾을 수 없습니다.");
 
-  // 1. 프로필 기반으로 최근 게시물 50개 스크래핑 (조회수 포함됨)
   const runRes = await fetch(
     `https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=${apifyToken}`,
     {
@@ -82,7 +98,7 @@ const fetchInstagramStats = async (url, apifyToken) => {
       body: JSON.stringify({
         directUrls: [`https://www.instagram.com/${username}/`],
         resultsType: "posts",
-        resultsLimit: 100,
+        resultsLimit: 50,
         addParentData: false,
       }),
     }
@@ -95,7 +111,6 @@ const fetchInstagramStats = async (url, apifyToken) => {
   const runId = runData.data?.id;
   if (!runId) throw new Error("Apify Run ID를 받지 못했습니다.");
 
-  // 2. 완료까지 폴링 (최대 90초, 프로필 스크래핑이라 시간이 더 걸림)
   for (let i=0; i<30; i++) {
     await new Promise(r=>setTimeout(r,3000));
     const st = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`);
@@ -106,14 +121,13 @@ const fetchInstagramStats = async (url, apifyToken) => {
     if (i===29) throw new Error("시간 초과 (90초). 잠시 후 다시 시도해주세요.");
   }
 
-  // 3. 결과 중 우리가 찾는 게시물(shortCode 일치) 찾기
   const itemRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}&limit=50`);
   if (!itemRes.ok) throw new Error("결과 데이터 조회 실패");
   const items = await itemRes.json();
   if (!items?.length) throw new Error("게시물을 찾을 수 없습니다. 비공개 계정일 수 있습니다.");
 
   const p = shortCode ? items.find(x => x.shortCode === shortCode) : items[0];
-  if (!p) throw new Error("해당 게시물을 최근 50개 안에서 찾지 못했습니다. (오래된 게시물일 수 있음)");
+  if (!p) throw new Error("해당 게시물을 최근 50개 안에서 찾지 못했습니다.");
 
   return {
     title: p.caption?.slice(0,120) || p.alt || "(캡션 없음)",
@@ -125,9 +139,9 @@ const fetchInstagramStats = async (url, apifyToken) => {
   };
 };
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 유틸
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 const fmt = (n) => { if(!n)return"0"; if(n>=1000000)return(n/1000000).toFixed(1)+"M"; if(n>=1000)return(n/1000).toFixed(1)+"K"; return n.toLocaleString(); };
 const fmtFull = (n) => (n||0).toLocaleString();
 const detectPlatform = (url="") => {
@@ -151,9 +165,9 @@ const statusStyle = (s="") => {
   return{bg:"#F3F4F6",text:"#6B7280"};
 };
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 공통 스타일
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 const C = {
   card:{background:"#fff",border:"1px solid "+RED_BORDER,borderRadius:12,padding:20},
   btnRed:{padding:"9px 20px",borderRadius:8,border:"none",background:RED,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"},
@@ -172,31 +186,54 @@ const Thumb = ({src}) => (
   </div>
 );
 const Spinner = ({size=16}) => <div style={{width:size,height:size,border:"2px solid "+RED_BORDER,borderTopColor:RED,borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/>;
+const FullPageLoader = ({msg}) => (
+  <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,background:"#FDF8F8"}}>
+    <Spinner size={32}/>
+    <div style={{fontSize:14,color:"#6B7280"}}>{msg}</div>
+  </div>
+);
 
-// ══════════════════════════════════════════════════════════
-// 로그인 / 회원가입
-// ══════════════════════════════════════════════════════════
-function AuthScreen({users,setUsers,onLogin}) {
+// ════════════════════════════════════════════════════════
+// 로그인 / 회원가입 (DB 연동)
+// ════════════════════════════════════════════════════════
+function AuthScreen({onLogin}) {
   const [mode,setMode]=useState("login");
   const [form,setForm]=useState({name:"",email:"",password:""});
   const [err,setErr]=useState("");
   const [success,setSuccess]=useState("");
+  const [loading,setLoading]=useState(false);
   const set=(k,v)=>{setForm(f=>({...f,[k]:v}));setErr("");};
 
-  const handleLogin=()=>{
-    const found=users.find(u=>u.email===form.email&&u.password===form.password);
-    if(!found)return setErr("이메일 또는 비밀번호가 올바르지 않습니다.");
-    if(found.status==="대기")return setErr("관리자 승인 대기 중입니다.");
-    if(found.status==="거절")return setErr("접근이 거절된 계정입니다.");
-    onLogin(found);
+  const handleLogin=async()=>{
+    if(!form.email||!form.password)return setErr("이메일과 비밀번호를 입력해주세요.");
+    setLoading(true);setErr("");
+    try{
+      const rows = await sb("users","GET",null,`?email=eq.${encodeURIComponent(form.email)}`);
+      const found = rows?.[0];
+      if(!found||found.password!==form.password) return setErr("이메일 또는 비밀번호가 올바르지 않습니다.");
+      if(found.status==="대기") return setErr("관리자 승인 대기 중입니다.");
+      if(found.status==="거절") return setErr("접근이 거절된 계정입니다.");
+      onLogin(userFromDB(found));
+    }catch(e){ setErr("로그인 중 오류: "+e.message); }
+    finally{ setLoading(false); }
   };
-  const handleSignup=()=>{
+
+  const handleSignup=async()=>{
     if(!form.name.trim())return setErr("이름을 입력해주세요.");
     if(!form.email.includes("@"))return setErr("올바른 이메일을 입력해주세요.");
-    if(users.find(u=>u.email===form.email))return setErr("이미 가입된 이메일입니다.");
-    setUsers(prev=>[...prev,{id:Date.now(),name:form.name.trim(),email:form.email.trim(),password:"",role:"member",status:"대기",joinedAt:new Date().toISOString().slice(0,10)}]);
-    setSuccess("가입 신청 완료! 관리자 승인 후 로그인 가능합니다.");
-    setForm({name:"",email:"",password:""});
+    setLoading(true);setErr("");
+    try{
+      const exists = await sb("users","GET",null,`?email=eq.${encodeURIComponent(form.email)}`);
+      if(exists?.length) return setErr("이미 가입된 이메일입니다.");
+      await sb("users","POST",{
+        id: Date.now(), name: form.name.trim(), email: form.email.trim(),
+        password: "", role: "member", status: "대기",
+        joined_at: new Date().toISOString().slice(0,10),
+      });
+      setSuccess("가입 신청 완료! 관리자 승인 후 로그인 가능합니다.");
+      setForm({name:"",email:"",password:""});
+    }catch(e){ setErr("가입 중 오류: "+e.message); }
+    finally{ setLoading(false); }
   };
 
   return (
@@ -207,8 +244,8 @@ function AuthScreen({users,setUsers,onLogin}) {
           <div style={{width:60,height:60,background:"rgba(255,255,255,0.15)",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",border:"1px solid rgba(255,255,255,0.3)"}}>
             <span style={{fontSize:28}}>📊</span>
           </div>
-          <div style={{fontSize:20,fontWeight:900,color:"#fff"}}>피카소 모니터링</div>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.7)",marginTop:4}}>피카소 TF 전용 대시보드</div>
+          <div style={{fontSize:20,fontWeight:900,color:"#fff"}}>피카소 조회수 모니터링</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.7)",marginTop:4}}>피카소 TF 대시보드</div>
         </div>
         <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",boxShadow:"0 24px 64px rgba(0,0,0,0.25)"}}>
           <div style={{display:"flex",background:"#F3F4F6",borderRadius:10,padding:4,marginBottom:28}}>
@@ -227,7 +264,9 @@ function AuthScreen({users,setUsers,onLogin}) {
               <input style={C.inp} type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="이메일을 입력하세요"/>
               <label style={C.lbl}>비밀번호</label>
               <input style={C.inp} type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="비밀번호를 입력하세요" onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
-              <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15}} onClick={handleLogin}>로그인</button>
+              <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:loading?0.7:1}} onClick={handleLogin} disabled={loading}>
+                {loading&&<Spinner size={14}/>}{loading?"로그인 중...":"로그인"}
+              </button>
             </>
           ):(
             <>
@@ -236,7 +275,9 @@ function AuthScreen({users,setUsers,onLogin}) {
               <label style={C.lbl}>이메일 *</label>
               <input style={C.inp} type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="이메일을 입력하세요" onKeyDown={e=>e.key==="Enter"&&handleSignup()}/>
               <p style={{fontSize:12,color:"#9CA3AF",margin:"0 0 20px",lineHeight:1.5}}>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.</p>
-              <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15}} onClick={handleSignup}>가입 신청</button>
+              <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:loading?0.7:1}} onClick={handleSignup} disabled={loading}>
+                {loading&&<Spinner size={14}/>}{loading?"신청 중...":"가입 신청"}
+              </button>
             </>
           )}
         </div>
@@ -245,16 +286,17 @@ function AuthScreen({users,setUsers,onLogin}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════
-// 설정 페이지 (관리자 전용)
-// ══════════════════════════════════════════════════════════
-function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
-  const [ytInput,setYtInput]=useState(ytApiKey);
-  const [igInput,setIgInput]=useState(apifyToken);
+// ════════════════════════════════════════════════════════
+// 설정 페이지 (DB 연동)
+// ════════════════════════════════════════════════════════
+function Settings({settings,refreshSettings,currentUser}) {
+  const [ytInput,setYtInput]=useState(settings.ytApiKey||"");
+  const [igInput,setIgInput]=useState(settings.apifyToken||"");
   const [ytTesting,setYtTesting]=useState(false);
   const [igTesting,setIgTesting]=useState(false);
   const [ytResult,setYtResult]=useState(null);
   const [igResult,setIgResult]=useState(null);
+  const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState("");
 
   if(currentUser.role!=="admin") return(
@@ -263,8 +305,6 @@ function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
       <div style={{fontSize:18,fontWeight:700}}>관리자 전용 페이지입니다</div>
     </div>
   );
-
-  const maskKey=(k)=>k?k.slice(0,8)+"••••••••••••••••"+k.slice(-4):"";
 
   const testYT=async()=>{
     if(!ytInput.trim())return setYtResult({ok:false,msg:"API 키를 먼저 입력해주세요."});
@@ -277,12 +317,10 @@ function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
     }catch(e){setYtResult({ok:false,msg:"❌ "+e.message});}
     finally{setYtTesting(false);}
   };
-
   const testIG=async()=>{
     if(!igInput.trim())return setIgResult({ok:false,msg:"Apify 토큰을 먼저 입력해주세요."});
     setIgTesting(true);setIgResult(null);
     try{
-      // 사용자 정보 조회로 토큰 유효성만 확인
       const res=await fetch(`https://api.apify.com/v2/users/me?token=${igInput.trim()}`);
       const data=await res.json();
       if(data.error||!data.data?.username)throw new Error(data.error?.message||"토큰이 유효하지 않습니다.");
@@ -291,12 +329,18 @@ function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
     finally{setIgTesting(false);}
   };
 
-  const saveAll=()=>{
-    setYtApiKey(ytInput.trim());
-    setApifyToken(igInput.trim());
-    setSaved("✅ 저장 완료!");
-    setTimeout(()=>setSaved(""),3000);
+  const saveAll=async()=>{
+    setSaving(true);
+    try{
+      await sb("app_settings","PATCH",{ yt_api_key:ytInput.trim(), apify_token:igInput.trim() },"?id=eq.1");
+      await refreshSettings();
+      setSaved("✅ 저장 완료! 이제 어떤 기기에서든 로그인하면 동일하게 적용됩니다.");
+      setTimeout(()=>setSaved(""),4000);
+    }catch(e){ setSaved("❌ 저장 실패: "+e.message); }
+    finally{ setSaving(false); }
   };
+
+  const maskKey=(k)=>k?k.slice(0,8)+"••••••••••••••••"+k.slice(-4):"";
 
   const ApiCard=({title,subtitle,color,icon,inputVal,setInputVal,onTest,testing,result,children,link,linkLabel})=>(
     <div style={{...C.card,maxWidth:680,marginBottom:20,borderTop:`3px solid ${color}`}}>
@@ -309,9 +353,14 @@ function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
         {inputVal&&<span style={{padding:"3px 12px",borderRadius:20,background:"#DCFCE7",color:"#166534",fontSize:12,fontWeight:700}}>● 연결됨</span>}
       </div>
       {children}
-      <label style={C.lbl}>토큰 / API 키</label>
+      {inputVal&&(
+        <div style={{padding:"8px 12px",background:RED_LIGHT,border:"1px solid "+RED_BORDER,borderRadius:8,marginBottom:10,fontSize:12,fontFamily:"monospace",color:"#6B7280"}}>
+          현재 저장된 값: {maskKey(inputVal)}
+        </div>
+      )}
+      <label style={C.lbl}>토큰 / API 키 (새 값으로 교체 시 입력)</label>
       <div style={{display:"flex",gap:8,marginBottom:10}}>
-        <input style={{...C.inp,marginBottom:0,flex:1,fontFamily:"monospace"}} type="password" value={inputVal} onChange={e=>{setInputVal(e.target.value);}} placeholder={`${title} 키 입력...`}/>
+        <input style={{...C.inp,marginBottom:0,flex:1,fontFamily:"monospace"}} type="password" value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder={`${title} 키 입력...`}/>
         <button style={{...C.btnOutline,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}} onClick={onTest} disabled={testing}>
           {testing&&<Spinner size={13}/>}{testing?"확인 중...":"연결 테스트"}
         </button>
@@ -324,63 +373,42 @@ function Settings({ytApiKey,setYtApiKey,apifyToken,setApifyToken,currentUser}) {
   return(
     <div>
       <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>설정</h1>
-      <p style={{margin:"0 0 28px",fontSize:13,color:"#6B7280"}}>API 키 및 연동 설정 (관리자 전용)</p>
+      <p style={{margin:"0 0 28px",fontSize:13,color:"#6B7280"}}>API 키 및 연동 설정 (DB에 저장되어 모든 기기에서 공유됩니다)</p>
 
-      {saved&&<div style={{padding:"12px 16px",borderRadius:10,marginBottom:20,fontSize:14,fontWeight:600,background:"#DCFCE7",color:"#166534"}}>{saved}</div>}
+      {saved&&<div style={{padding:"12px 16px",borderRadius:10,marginBottom:20,fontSize:14,fontWeight:600,background:saved.includes("실패")?"#FEE2E2":"#DCFCE7",color:saved.includes("실패")?"#991B1B":"#166534"}}>{saved}</div>}
 
-      {/* YouTube */}
-      <ApiCard
-        title="YouTube Data API v3" subtitle="조회수·좋아요·댓글 자동 수집" color="#FF0000" icon="▶️"
+      <ApiCard title="YouTube Data API v3" subtitle="조회수·좋아요·댓글 자동 수집" color="#FF0000" icon="▶️"
         inputVal={ytInput} setInputVal={setYtInput} onTest={testYT} testing={ytTesting} result={ytResult}
         link="https://console.cloud.google.com/apis/library/youtube.googleapis.com" linkLabel="Google Cloud Console">
         <div style={{padding:"12px 16px",background:"#F9FAFB",borderRadius:8,marginBottom:16,fontSize:12,color:"#6B7280",lineHeight:1.8}}>
-          📋 <b>무료 할당량:</b> 하루 10,000 쿼리 · 영상 1개 = 쿼리 1개 · 200개 콘텐츠 기준 여유 있음
+          📋 <b>무료 할당량:</b> 하루 10,000 쿼리 · 영상 1개 = 쿼리 1개
         </div>
       </ApiCard>
 
-      {/* Instagram (Apify) */}
-      <ApiCard
-        title="Instagram 스크래퍼 (Apify)" subtitle="공개 계정 게시물 좋아요·댓글·조회수 수집" color="#E1306C" icon="📸"
+      <ApiCard title="Instagram 스크래퍼 (Apify)" subtitle="공개 계정 게시물 좋아요·댓글·조회수 수집" color="#E1306C" icon="📸"
         inputVal={igInput} setInputVal={setIgInput} onTest={testIG} testing={igTesting} result={igResult}
         link="https://console.apify.com/account/integrations" linkLabel="Apify 토큰 발급">
         <div style={{padding:"12px 16px",background:"#FFF0F5",border:"1px solid #FFC8D8",borderRadius:8,marginBottom:16,fontSize:12,color:"#9B1B40",lineHeight:1.8}}>
-          ⚠️ <b>주의사항</b><br/>
-          • 공개 계정만 수집 가능 (비공개 계정 불가)<br/>
-          • 릴스 조회수는 간혹 누락될 수 있음<br/>
-          • 게시물 1건당 약 $0.002 소모 · 첫 가입 시 $5 무료 크레딧 제공<br/>
-          • 스레드(Threads)는 수동 입력 권장
+          ⚠️ 공개 계정만 가능 · 릴스 조회수는 프로필 기반 스크래핑으로 수집 (최근 게시물 50개 내)
         </div>
       </ApiCard>
 
-      {/* Threads 안내 */}
-      <div style={{...C.card,maxWidth:680,borderTop:"3px solid #111827",opacity:0.75}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <div style={{width:36,height:36,background:"#111827",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🧵</div>
-          <div>
-            <div style={{fontSize:15,fontWeight:800,color:"#111827"}}>Threads</div>
-            <div style={{fontSize:12,color:"#6B7280"}}>수동 입력 권장</div>
-          </div>
-          <span style={{marginLeft:"auto",padding:"3px 12px",borderRadius:20,background:"#F3F4F6",color:"#6B7280",fontSize:12,fontWeight:700}}>자동화 불가</span>
-        </div>
-        <p style={{margin:0,fontSize:13,color:"#6B7280",lineHeight:1.6}}>
-          Meta가 Threads 크롤링을 강하게 차단하고 있어 안정적인 자동 수집이 어렵습니다.<br/>
-          콘텐츠 등록 시 조회수/좋아요를 직접 입력해주세요.
-        </p>
-      </div>
-
       <div style={{marginTop:24,maxWidth:680,display:"flex",justifyContent:"flex-end"}}>
-        <button style={{...C.btnRed,padding:"11px 32px",fontSize:15}} onClick={saveAll}>전체 저장</button>
+        <button style={{...C.btnRed,padding:"11px 32px",fontSize:15,display:"flex",alignItems:"center",gap:8,opacity:saving?0.7:1}} onClick={saveAll} disabled={saving}>
+          {saving&&<Spinner size={14}/>}{saving?"저장 중...":"전체 저장"}
+        </button>
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 콘텐츠 등록 모달
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
-  const [form,setForm]=useState({url:"",title:"",brand:"",campaign:"",manager:"",collaborator:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:""});
+  const [form,setForm]=useState({url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:""});
   const [loading,setLoading]=useState(false);
+  const [saving,setSaving]=useState(false);
   const [fetchErr,setFetchErr]=useState("");
   const [preview,setPreview]=useState(null);
   const detected=detectPlatform(form.url);
@@ -406,35 +434,42 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
 
   const handleSave=async(autoFetch)=>{
     if(!form.url.trim())return alert("URL을 입력해주세요.");
-    setLoading(true);
+    setSaving(true);
     let s=preview;
     if(autoFetch&&canAutoFetch&&!s){
       try{
         if(isYT)s=await fetchYouTubeStats(form.url,ytApiKey);
         else if(isIG)s=await fetchInstagramStats(form.url,apifyToken);
-      }catch(e){setFetchErr(e.message);setLoading(false);return;}
+      }catch(e){setFetchErr(e.message);setSaving(false);return;}
     }
-    onAdd({
+    const newItem={
       id:Date.now(),url:form.url.trim(),
       platform:detected||"Instagram Post",
       title:s?.title||form.title||"",
       thumbnail:s?.thumbnail||"",
       campaign:form.campaign,
-manager:form.manager,
+      manager:form.manager,
       uploadDate:form.uploadDate||s?.publishedAt||new Date().toISOString().slice(0,10),
       memo:form.memo,
       views:s?.views||parseInt(form.manualViews)||0,
       likes:s?.likes||parseInt(form.manualLikes)||0,
       comments:s?.comments||parseInt(form.manualComments)||0,
       views24h:0,views7d:0,status:"성공",
-    });
-    setLoading(false);onClose();
+    };
+    try{
+      await sb("contents","POST",contentToDB(newItem));
+      onAdd(newItem);
+      setSaving(false);onClose();
+    }catch(e){
+      setFetchErr("저장 실패: "+e.message);
+      setSaving(false);
+    }
   };
 
   const PreviewBox=()=>{
     if(loading)return(
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px",background:"#fff",borderRadius:8,border:"1px solid "+RED_BORDER,marginTop:10}}>
-        <Spinner/><div style={{fontSize:13,color:"#6B7280"}}>{isIG?"Instagram 데이터 수집 중... (최대 60초)":"YouTube 데이터 가져오는 중..."}</div>
+        <Spinner/><div style={{fontSize:13,color:"#6B7280"}}>{isIG?"Instagram 데이터 수집 중... (최대 90초)":"YouTube 데이터 가져오는 중..."}</div>
       </div>
     );
     if(fetchErr)return(
@@ -449,7 +484,7 @@ manager:form.manager,
         {preview.thumbnail&&<img src={preview.thumbnail} alt="" style={{width:"100%",borderRadius:6,marginBottom:8,display:"block"}}/>}
         <div style={{fontSize:12,fontWeight:600,color:"#111827",marginBottom:10,lineHeight:1.4}}>{preview.title}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-          {[{label:"조회수",value:fmtFull(preview.views)},{label:"좋아요",value:fmtFull(preview.likes)},{label:"댓글",value:fmtFull(preview.comments)}].map(s=>(
+          {[{label:"조회수",value:preview.views?fmtFull(preview.views):"없음"},{label:"좋아요",value:fmtFull(preview.likes)},{label:"댓글",value:fmtFull(preview.comments)}].map(s=>(
             <div key={s.label} style={{background:RED_LIGHT,borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
               <div style={{fontSize:10,color:"#6B7280"}}>{s.label}</div>
               <div style={{fontSize:13,fontWeight:800,color:RED}}>{s.value}</div>
@@ -473,7 +508,6 @@ manager:form.manager,
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,padding:"24px 28px"}}>
-          {/* 좌: URL + 미리보기 */}
           <div>
             <div style={{background:RED_LIGHT,borderRadius:12,padding:20,border:"1px solid "+RED_BORDER,marginBottom:16}}>
               <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700}}>URL 및 자동 인식</h3>
@@ -484,13 +518,11 @@ manager:form.manager,
                 <div style={{padding:"8px 12px",background:"#fff",border:"1px solid "+RED_BORDER,borderRadius:8,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:12,color:"#6B7280"}}>플랫폼:</span>
                   {detected?<PlatformBadge p={detected}/>:<span style={{fontSize:12,color:"#9CA3AF"}}>인식 불가</span>}
-                  {canAutoFetch&&!preview&&!loading&&!fetchErr&&<span style={{fontSize:11,color:"#6B7280",marginLeft:"auto"}}>↑ 포커스 이동 시 자동 수집</span>}
                 </div>
               )}
               <PreviewBox/>
             </div>
 
-            {/* 수동 입력 (Threads 또는 실패 시) */}
             {(isThreads||fetchErr||(!canAutoFetch&&(isIG||isYT)))&&(
               <div style={{background:"#F9FAFB",borderRadius:12,padding:16,border:"1px solid #E5E7EB"}}>
                 <h3 style={{margin:"0 0 12px",fontSize:13,fontWeight:700,color:"#374151"}}>
@@ -504,21 +536,18 @@ manager:form.manager,
                     </div>
                   ))}
                 </div>
-                {!canAutoFetch&&isYT&&<p style={{margin:"8px 0 0",fontSize:11,color:"#D97706"}}>💡 설정에서 YouTube API 키를 입력하면 자동으로 가져옵니다.</p>}
-                {!canAutoFetch&&isIG&&<p style={{margin:"8px 0 0",fontSize:11,color:"#D97706"}}>💡 설정에서 Apify 토큰을 입력하면 자동으로 가져옵니다.</p>}
               </div>
             )}
           </div>
 
-          {/* 우: 콘텐츠 정보 */}
           <div>
             <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700}}>콘텐츠 정보</h3>
             <label style={C.lbl}>콘텐츠명</label>
             <input style={C.inp} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="(YouTube·Instagram은 자동 입력)"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-  <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
-  <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
-</div>
+              <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
+              <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
+            </div>
             <label style={C.lbl}>업로드일</label>
             <input style={C.inp} type="date" value={form.uploadDate} onChange={e=>set("uploadDate",e.target.value)}/>
             <label style={C.lbl}>메모</label>
@@ -528,10 +557,10 @@ manager:form.manager,
 
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"0 28px 24px"}}>
           <button style={C.btnOutline} onClick={onClose}>취소</button>
-          <button style={C.btnOutline} onClick={()=>handleSave(false)} disabled={loading}>저장만 하기</button>
-          <button style={{...C.btnRed,opacity:loading?0.6:1,display:"flex",alignItems:"center",gap:8}} onClick={()=>handleSave(true)} disabled={loading}>
-            {loading&&<Spinner size={14}/>}
-            {loading?"수집 중...":"저장 + 최초 지표 가져오기"}
+          <button style={C.btnOutline} onClick={()=>handleSave(false)} disabled={saving}>저장만 하기</button>
+          <button style={{...C.btnRed,opacity:saving?0.6:1,display:"flex",alignItems:"center",gap:8}} onClick={()=>handleSave(true)} disabled={saving}>
+            {saving&&<Spinner size={14}/>}
+            {saving?"저장 중...":"저장 + 최초 지표 가져오기"}
           </button>
         </div>
       </div>
@@ -539,9 +568,9 @@ manager:form.manager,
   );
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 대시보드
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 function Dashboard({contents,onOpenRegister}) {
   const total=contents.length;
   const totalViews=contents.reduce((s,c)=>s+(c.views||0),0);
@@ -640,9 +669,9 @@ function Dashboard({contents,onOpenRegister}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 콘텐츠 목록
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 function ContentsList({contents,onOpenRegister}) {
   const [search,setSearch]=useState("");
   const [pfFilter,setPfFilter]=useState("전체");
@@ -688,7 +717,6 @@ function ContentsList({contents,onOpenRegister}) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button style={C.btnOutline}>↓ CSV</button>
-          <button style={C.btnOutline}>↻ 전체 지표 업데이트</button>
           <button style={C.btnRed} onClick={onOpenRegister}>+ 콘텐츠 등록</button>
         </div>
       </div>
@@ -745,7 +773,7 @@ function ContentsList({contents,onOpenRegister}) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{borderBottom:"2px solid "+RED_BORDER,background:RED_LIGHT}}>
-               {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","링크"].map(h=>(
+                {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","링크"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:RED,textAlign:h==="콘텐츠"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -764,9 +792,7 @@ function ContentsList({contents,onOpenRegister}) {
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><PlatformBadge p={item.platform}/></td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
-                 <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-  <div style={{fontWeight:600}}>{item.campaign||"—"}</div>
-</td>
+                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,fontWeight:600}}>{item.campaign||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>{item.manager||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
                     <div style={{fontWeight:600}}>조회 {fmtFull(item.views)}</div>
@@ -790,9 +816,9 @@ function ContentsList({contents,onOpenRegister}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 캠페인 분석
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 function Campaigns({contents}) {
   const campaigns=useMemo(()=>{
     const m={};
@@ -816,7 +842,6 @@ function Campaigns({contents}) {
       <div style={{...C.card,textAlign:"center",padding:"80px 24px",marginTop:24}}>
         <div style={{fontSize:60,marginBottom:18}}>📢</div>
         <div style={{fontSize:20,fontWeight:700,marginBottom:10}}>캠페인 데이터가 없습니다</div>
-        <div style={{fontSize:14,color:"#6B7280"}}>콘텐츠 등록 시 캠페인명을 입력하면 분석이 표시됩니다.</div>
       </div>
     </div>
   );
@@ -830,10 +855,6 @@ function Campaigns({contents}) {
           <div key={c.name} style={{...C.card,borderTop:"3px solid "+RED}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h3 style={{margin:0,fontSize:15,fontWeight:800}}>{c.name}</h3>
-              <div style={{display:"flex",gap:8}}>
-                <button style={C.btnOutline}>↻ 최신화</button>
-                <button style={C.btnGhost}>✨ 보고 문안 생성</button>
-              </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
@@ -872,15 +893,25 @@ function Campaigns({contents}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════
-// 회원 관리
-// ══════════════════════════════════════════════════════════
-function MemberAdmin({users,setUsers,currentUser}) {
+// ════════════════════════════════════════════════════════
+// 회원 관리 (DB 연동)
+// ════════════════════════════════════════════════════════
+function MemberAdmin({users,refreshUsers,currentUser}) {
   const [filter,setFilter]=useState("전체");
   if(currentUser.role!=="admin")return<div style={{...C.card,textAlign:"center",padding:60}}><div style={{fontSize:48,marginBottom:16}}>🔒</div><div style={{fontSize:18,fontWeight:700}}>관리자 전용 페이지입니다</div></div>;
   const filtered=filter==="전체"?users:users.filter(u=>u.status===filter);
-  const updateStatus=(id,status)=>setUsers(prev=>prev.map(u=>u.id===id?{...u,status}:u));
-  const deleteUser=(id)=>{if(id===1)return alert("관리자 계정은 삭제할 수 없습니다.");if(window.confirm("정말 삭제하시겠습니까?"))setUsers(prev=>prev.filter(u=>u.id!==id));};
+
+  const updateStatus=async(id,status)=>{
+    try{ await sb("users","PATCH",{status},`?id=eq.${id}`); await refreshUsers(); }
+    catch(e){ alert("업데이트 실패: "+e.message); }
+  };
+  const deleteUser=async(id)=>{
+    if(id===1)return alert("관리자 계정은 삭제할 수 없습니다.");
+    if(!window.confirm("정말 삭제하시겠습니까?"))return;
+    try{ await sb("users","DELETE",null,`?id=eq.${id}`); await refreshUsers(); }
+    catch(e){ alert("삭제 실패: "+e.message); }
+  };
+
   const counts={전체:users.length,대기:users.filter(u=>u.status==="대기").length,승인:users.filter(u=>u.status==="승인").length,거절:users.filter(u=>u.status==="거절").length};
 
   return(
@@ -951,20 +982,41 @@ function MemberAdmin({users,setUsers,currentUser}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // 메인 앱
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 export default function App() {
-  const [users,setUsers]=useState(INIT_USERS);
-  const [currentUser,setCurrentUser]=useState(null);
+  const [initLoading,setInitLoading]=useState(true);
+  const [initError,setInitError]=useState("");
+  const [users,setUsers]=useState([]);
+  const [currentUser,setCurrentUser]=useState(()=>{
+    try{ const saved=localStorage.getItem("sns_current_user"); return saved?JSON.parse(saved):null; }
+    catch{ return null; }
+  });
   const [page,setPage]=useState("dashboard");
   const [showRegister,setShowRegister]=useState(false);
-  const [currentUser,setCurrentUser]=useState(()=>{
-  try{ const saved=localStorage.getItem("sns_current_user"); return saved?JSON.parse(saved):null; }
-  catch{ return null; }
-});
-  const [ytApiKey,setYtApiKey]=useState("");
-  const [apifyToken,setApifyToken]=useState("");
+  const [contents,setContents]=useState([]);
+  const [settings,setSettings]=useState({ytApiKey:"",apifyToken:""});
+
+  const loadAll=async()=>{
+    try{
+      const [contentRows, userRows, settingsRows] = await Promise.all([
+        sb("contents","GET",null,"?order=id.desc"),
+        sb("users","GET"),
+        sb("app_settings","GET",null,"?id=eq.1"),
+      ]);
+      setContents((contentRows||[]).map(contentFromDB));
+      setUsers((userRows||[]).map(userFromDB));
+      const s = settingsRows?.[0];
+      setSettings({ ytApiKey: s?.yt_api_key||"", apifyToken: s?.apify_token||"" });
+    }catch(e){
+      setInitError(e.message);
+    }finally{
+      setInitLoading(false);
+    }
+  };
+
+  useEffect(()=>{ loadAll(); },[]);
 
   const isAdmin=currentUser?.role==="admin";
   const nav=[
@@ -974,10 +1026,23 @@ export default function App() {
     ...(isAdmin?[{key:"members",label:"👥 회원 관리"},{key:"settings",label:"⚙️ 설정"}]:[]),
   ];
 
-  if(!currentUser)return<AuthScreen users={users} setUsers={setUsers} onLogin={u=>{setCurrentUser(u);localStorage.setItem("sns_current_user",JSON.stringify(u));setPage("dashboard");}}/>;
+  if(initLoading) return <FullPageLoader msg="데이터를 불러오는 중..."/>;
+
+  if(initError) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"#FDF8F8"}}>
+      <div style={{...C.card,maxWidth:480,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>데이터 연결 실패</div>
+        <div style={{fontSize:13,color:"#6B7280",marginBottom:16}}>{initError}</div>
+        <div style={{fontSize:12,color:"#9CA3AF"}}>SUPABASE_URL / SUPABASE_KEY 값이 올바른지, 테이블이 생성됐는지 확인해주세요.</div>
+      </div>
+    </div>
+  );
+
+  if(!currentUser) return <AuthScreen onLogin={u=>{setCurrentUser(u);localStorage.setItem("sns_current_user",JSON.stringify(u));setPage("dashboard");}}/>;
 
   const apiStatus=()=>{
-    const yt=!!ytApiKey; const ig=!!apifyToken;
+    const yt=!!settings.ytApiKey; const ig=!!settings.apifyToken;
     if(yt&&ig)return{color:"#16A34A",label:"YouTube · Instagram 연결됨",dot:"#16A34A"};
     if(yt)return{color:"#D97706",label:"YouTube만 연결됨",dot:"#D97706"};
     if(ig)return{color:"#D97706",label:"Instagram만 연결됨",dot:"#D97706"};
@@ -997,7 +1062,7 @@ export default function App() {
             </div>
             <div>
               <div style={{fontSize:13,fontWeight:800,color:"#111827",lineHeight:1.2}}>피카소 TF</div>
-              <div style={{fontSize:10,color:"#9CA3AF"}}>성과 모니터링</div>
+              <div style={{fontSize:10,color:"#9CA3AF"}}>조회수 모니터링</div>
             </div>
           </div>
 
@@ -1009,10 +1074,9 @@ export default function App() {
             </button>
           ))}
 
-          <div style={{flex:1}}/>
+          <div style={{flex:1,minWidth:8}}/>
 
           <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-            {/* API 상태 (관리자만) */}
             {isAdmin&&(status?(
               <span style={{fontSize:12,color:status.color,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
                 <span style={{width:7,height:7,borderRadius:"50%",background:status.dot,display:"inline-block"}}/>
@@ -1024,12 +1088,12 @@ export default function App() {
               </button>
             ))}
 
-            <button style={{display:"flex",alignItems:"center",gap:6,padding:"8px 18px",borderRadius:8,border:"none",background:RED_DARK,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
+            <button style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:8,border:"none",background:RED_DARK,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
               onClick={()=>setShowRegister(true)}>
               <span style={{fontSize:17,lineHeight:1}}>+</span> 콘텐츠 등록
             </button>
 
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"7px 16px",border:"1px solid "+RED_BORDER,borderRadius:8,background:RED_LIGHT}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px",border:"1px solid "+RED_BORDER,borderRadius:8,background:RED_LIGHT}}>
               <div style={{width:26,height:26,borderRadius:"50%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff"}}>{currentUser.name[0]}</div>
               <span style={{fontSize:13,fontWeight:700,color:RED}}>{currentUser.name}</span>
               <span style={{color:RED_BORDER,fontSize:16}}>|</span>
@@ -1043,11 +1107,11 @@ export default function App() {
         {page==="dashboard"&&<Dashboard contents={contents} onOpenRegister={()=>setShowRegister(true)}/>}
         {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)}/>}
         {page==="campaigns"&&<Campaigns contents={contents}/>}
-        {page==="members"&&<MemberAdmin users={users} setUsers={setUsers} currentUser={currentUser}/>}
-        {page==="settings"&&<Settings ytApiKey={ytApiKey} setYtApiKey={setYtApiKey} apifyToken={apifyToken} setApifyToken={setApifyToken} currentUser={currentUser}/>}
+        {page==="members"&&<MemberAdmin users={users} refreshUsers={loadAll} currentUser={currentUser}/>}
+        {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser}/>}
       </main>
 
-      {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={ytApiKey} apifyToken={apifyToken}/>}
+      {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
     </div>
   );
 }
