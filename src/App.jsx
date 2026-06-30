@@ -174,8 +174,8 @@ function AuthScreen({users,setUsers,onLogin}) {
           <div style={{width:60,height:60,background:"rgba(255,255,255,0.15)",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",border:"1px solid rgba(255,255,255,0.3)"}}>
             <span style={{fontSize:28}}>📊</span>
           </div>
-          <div style={{fontSize:20,fontWeight:900,color:"#fff"}}>SNS 콘텐츠 성과 모니터링</div>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.7)",marginTop:4}}>이랜드 홍보팀 전용 대시보드</div>
+          <div style={{fontSize:20,fontWeight:900,color:"#fff"}}>피카소 모니터링</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.7)",marginTop:4}}>피카소 TF 전용 대시보드</div>
         </div>
         <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",boxShadow:"0 24px 64px rgba(0,0,0,0.25)"}}>
           <div style={{display:"flex",background:"#F3F4F6",borderRadius:10,padding:4,marginBottom:28}}>
@@ -194,7 +194,6 @@ function AuthScreen({users,setUsers,onLogin}) {
               <input style={C.inp} type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="이메일을 입력하세요"/>
               <label style={C.lbl}>비밀번호</label>
               <input style={C.inp} type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="비밀번호를 입력하세요" onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
-              <p style={{fontSize:11,color:"#9CA3AF",margin:"0 0 20px"}}>테스트: admin@eland.com / 1234</p>
               <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15}} onClick={handleLogin}>로그인</button>
             </>
           ):(
