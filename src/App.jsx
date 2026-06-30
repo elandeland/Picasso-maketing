@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; 
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -30,12 +30,14 @@ const contentFromDB = (r) => ({
   campaign:r.campaign, manager:r.manager, uploadDate:r.upload_date, memo:r.memo,
   views:r.views, likes:r.likes, comments:r.comments,
   views24h:r.views_24h, views7d:r.views_7d, status:r.status,
+  lastUpdated:r.last_updated, viewsLastWeek:r.views_last_week,
 });
 const contentToDB = (c) => ({
   id:c.id, url:c.url, platform:c.platform, title:c.title, thumbnail:c.thumbnail,
   campaign:c.campaign, manager:c.manager, upload_date:c.uploadDate, memo:c.memo,
   views:c.views, likes:c.likes, comments:c.comments,
   views_24h:c.views24h, views_7d:c.views7d, status:c.status,
+  last_updated:c.lastUpdated, views_last_week:c.viewsLastWeek,
 });
 const userFromDB = (r) => ({ id:r.id, name:r.name, email:r.email, password:r.password, role:r.role, status:r.status, joinedAt:r.joined_at });
 
@@ -289,7 +291,7 @@ function AuthScreen({onLogin}) {
 // ════════════════════════════════════════════════════════
 // 설정 페이지 (DB 연동)
 // ════════════════════════════════════════════════════════
-function Settings({settings,refreshSettings,currentUser}) {
+function Settings({settings,refreshSettings,currentUser,monthlyGoals,refreshGoals}) {
   const [ytInput,setYtInput]=useState(settings.ytApiKey||"");
   const [igInput,setIgInput]=useState(settings.apifyToken||"");
   const [ytTesting,setYtTesting]=useState(false);
@@ -299,12 +301,39 @@ function Settings({settings,refreshSettings,currentUser}) {
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState("");
 
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const [goalInput,setGoalInput]=useState(monthlyGoals[thisMonthKey]||"");
+  const [goalSaving,setGoalSaving]=useState(false);
+  const [goalSaved,setGoalSaved]=useState("");
+
   if(currentUser.role!=="admin") return(
     <div style={{...C.card,textAlign:"center",padding:60}}>
       <div style={{fontSize:48,marginBottom:16}}>🔒</div>
       <div style={{fontSize:18,fontWeight:700}}>관리자 전용 페이지입니다</div>
     </div>
   );
+
+  const saveGoal = async () => {
+    const goalNum = parseInt(goalInput) || 0;
+    setGoalSaving(true);
+    try {
+      // upsert: 있으면 갱신, 없으면 생성
+      const existing = await sb("monthly_goals","GET",null,`?month=eq.${thisMonthKey}`);
+      if (existing?.length) {
+        await sb("monthly_goals","PATCH",{goal:goalNum},`?month=eq.${thisMonthKey}`);
+      } else {
+        await sb("monthly_goals","POST",{month:thisMonthKey, goal:goalNum});
+      }
+      await refreshGoals();
+      setGoalSaved("✅ "+(now.getMonth()+1)+"월 목표가 저장되었습니다.");
+      setTimeout(()=>setGoalSaved(""),3000);
+    } catch(e) {
+      setGoalSaved("❌ 저장 실패: "+e.message);
+    } finally {
+      setGoalSaving(false);
+    }
+  };
 
   const testYT=async()=>{
     if(!ytInput.trim())return setYtResult({ok:false,msg:"API 키를 먼저 입력해주세요."});
@@ -376,6 +405,25 @@ function Settings({settings,refreshSettings,currentUser}) {
       <p style={{margin:"0 0 28px",fontSize:13,color:"#6B7280"}}>API 키 및 연동 설정 (DB에 저장되어 모든 기기에서 공유됩니다)</p>
 
       {saved&&<div style={{padding:"12px 16px",borderRadius:10,marginBottom:20,fontSize:14,fontWeight:600,background:saved.includes("실패")?"#FEE2E2":"#DCFCE7",color:saved.includes("실패")?"#991B1B":"#166534"}}>{saved}</div>}
+
+      {/* 이번달 목표 설정 */}
+      <div style={{...C.card,maxWidth:680,marginBottom:20,borderTop:"3px solid "+RED}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <div style={{width:36,height:36,background:RED,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🎯</div>
+          <div>
+            <div style={{fontSize:15,fontWeight:800,color:"#111827"}}>{now.getMonth()+1}월 조회수 목표</div>
+            <div style={{fontSize:12,color:"#6B7280"}}>대시보드 달성률 계산에 사용됩니다</div>
+          </div>
+        </div>
+        {goalSaved&&<div style={{padding:"10px 14px",borderRadius:8,marginBottom:12,fontSize:13,fontWeight:600,background:goalSaved.includes("실패")?"#FEE2E2":"#DCFCE7",color:goalSaved.includes("실패")?"#991B1B":"#166534"}}>{goalSaved}</div>}
+        <label style={C.lbl}>목표 조회수</label>
+        <div style={{display:"flex",gap:8}}>
+          <input style={{...C.inp,marginBottom:0,flex:1}} type="number" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="예: 100000000"/>
+          <button style={{...C.btnRed,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}} onClick={saveGoal} disabled={goalSaving}>
+            {goalSaving&&<Spinner size={13}/>}{goalSaving?"저장 중...":"목표 저장"}
+          </button>
+        </div>
+      </div>
 
       <ApiCard title="YouTube Data API v3" subtitle="조회수·좋아요·댓글 자동 수집" color="#FF0000" icon="▶️"
         inputVal={ytInput} setInputVal={setYtInput} onTest={testYT} testing={ytTesting} result={ytResult}
@@ -460,6 +508,8 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
       likes:s?.likes||parseInt(form.manualLikes)||0,
       comments:s?.comments||parseInt(form.manualComments)||0,
       views24h:editItem?.views24h||0,views7d:editItem?.views7d||0,status:"성공",
+      lastUpdated:editItem?.lastUpdated||new Date().toISOString(),
+      viewsLastWeek:editItem?.viewsLastWeek ?? (s?.views||parseInt(form.manualViews)||0),
     };
     try{
       if(isEditMode){
@@ -583,15 +633,48 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
 // ════════════════════════════════════════════════════════
 // 대시보드
 // ════════════════════════════════════════════════════════
-function Dashboard({contents,onOpenRegister}) {
+function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const total=contents.length;
   const totalViews=contents.reduce((s,c)=>s+(c.views||0),0);
-  const today=contents.reduce((s,c)=>s+(c.views24h||0),0);
   const week=contents.reduce((s,c)=>s+(c.views7d||0),0);
   const topView=[...contents].sort((a,b)=>(b.views||0)-(a.views||0))[0];
   const topGrowth=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0))[0];
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
+
+  // ── 월별 집계 (이력 기준: 해당 월에 "올라간" 증가분 합산)
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,"0")}`;
+
+  const sumGrowthForMonth = (monthKey) => {
+    return viewHistory
+      .filter(h => h.recordedAt && h.recordedAt.slice(0,7)===monthKey)
+      .reduce((s,h)=>s+(h.growth||0),0);
+  };
+  const thisMonthViews = sumGrowthForMonth(thisMonthKey);
+  const lastMonthViews = sumGrowthForMonth(lastMonthKey);
+  const monthGoal = monthlyGoals[thisMonthKey] || 0;
+  const achieveRate = monthGoal>0 ? Math.round(thisMonthViews/monthGoal*100) : null;
+  const momGrowthRate = lastMonthViews>0 ? Math.round((thisMonthViews-lastMonthViews)/lastMonthViews*100) : null;
+
+  // ── 주차별 추이 (최근 8주, 월요일 시작 기준)
+  const weeklySeries = useMemo(()=>{
+    const weeks = [];
+    const today0 = new Date(); today0.setHours(0,0,0,0);
+    const dayOfWeek = (today0.getDay()+6)%7; // 월=0
+    const thisMonday = new Date(today0); thisMonday.setDate(today0.getDate()-dayOfWeek);
+    for (let i=7;i>=0;i--) {
+      const start = new Date(thisMonday); start.setDate(thisMonday.getDate()-7*i);
+      const end = new Date(start); end.setDate(start.getDate()+7);
+      const sum = viewHistory
+        .filter(h=>{ const d=new Date(h.recordedAt); return d>=start && d<end; })
+        .reduce((s,h)=>s+(h.growth||0),0);
+      weeks.push({ label:`${start.getMonth()+1}/${start.getDate()}`, value: sum });
+    }
+    return weeks;
+  },[viewHistory]);
 
   if(total===0)return(
     <div>
@@ -610,31 +693,54 @@ function Dashboard({contents,onOpenRegister}) {
     <div>
       <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>대시보드</h1>
       <p style={{margin:"0 0 22px",fontSize:13,color:"#6B7280"}}>전체 콘텐츠 성과 한눈에 보기 · 등록 콘텐츠 {total}건</p>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
-        {[
-          {label:"전체 콘텐츠",value:total,icon:"📄"},
-          {label:"누적 조회수",value:fmtFull(totalViews),sub:"전체 플랫폼 합계",icon:"👁"},
-          {label:"오늘 증가",value:today>0?"+"+fmt(today):"—",icon:"📈",green:true},
-          {label:"24시간 증가",value:today>0?"+"+fmt(today):"—",icon:"📈",green:true},
-        ].map(s=>(
-          <div key={s.label} style={{...C.card,padding:"16px 18px",borderTop:"3px solid "+RED}}>
-            <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#6B7280",fontWeight:600}}>{s.label}</span><span style={{fontSize:15}}>{s.icon}</span></div>
-            <div style={{fontSize:26,fontWeight:800,color:s.green&&today>0?"#16A34A":"#111827",marginTop:6}}>{s.value}</div>
-            {s.sub&&<div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>{s.sub}</div>}
-          </div>
-        ))}
-      </div>
+
+      {/* 월별 성과 카드 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
+        <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
+          <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>{now.getMonth()+1}월 조회수</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(thisMonthViews)}</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>이번달 누적 증가분</div>
+        </div>
+        <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
+          <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>{now.getMonth()+1}월 목표</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{monthGoal>0?fmtFull(monthGoal):"미설정"}</div>
+          <div style={{fontSize:11,marginTop:4,fontWeight:700,color:achieveRate==null?"#9CA3AF":achieveRate>=100?"#16A34A":"#D97706"}}>
+            {achieveRate==null?"설정 페이지에서 목표 입력":`달성률 ${achieveRate}%`}
+          </div>
+        </div>
+        <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
+          <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>{lastMonthDate.getMonth()+1}월 조회수 (저번달)</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(lastMonthViews)}</div>
+          <div style={{fontSize:11,marginTop:4,fontWeight:700,color:momGrowthRate==null?"#9CA3AF":momGrowthRate>=0?"#16A34A":RED}}>
+            {momGrowthRate==null?"비교 데이터 없음":`전월 대비 ${momGrowthRate>=0?"+":""}${momGrowthRate}%`}
+          </div>
+        </div>
+        <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
+          <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>누적 조회수</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews)}</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>전체 플랫폼 합계</div>
+        </div>
+      </div>
+
+      {/* 주차별 추이 그래프 */}
+      <div style={{...C.card,marginBottom:24}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,borderLeft:"3px solid "+RED,paddingLeft:10}}>주차별 조회수 추이 (최근 8주)</div>
+        <WeeklyLineChart data={weeklySeries}/>
+      </div>
+
+      {/* 24h / 7일 증가 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:24}}>
         {[
-          {label:"7일 증가",value:week>0?"+"+fmt(week):"—",icon:"🔄",green:true},
-          {label:"수동 입력 필요",value:contents.filter(c=>!c.views).length,icon:"⚠️"},
+          {label:"최근 업데이트 증가분",value:week>0?"+"+fmt(week):"—",icon:"📈"},
+          {label:"7일간 증가분",value:week>0?"+"+fmt(week):"—",icon:"🔄"},
         ].map(s=>(
           <div key={s.label} style={{...C.card,padding:"16px 18px",borderTop:"3px solid "+RED}}>
             <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#6B7280",fontWeight:600}}>{s.label}</span><span style={{fontSize:15}}>{s.icon}</span></div>
-            <div style={{fontSize:26,fontWeight:800,color:s.green&&week>0?"#16A34A":"#111827",marginTop:6}}>{s.value}</div>
+            <div style={{fontSize:26,fontWeight:800,color:week>0?"#16A34A":"#111827",marginTop:6}}>{s.value}</div>
           </div>
         ))}
       </div>
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
         {[
           {title:"최고 조회수 콘텐츠",item:topView,sub:v=>fmtFull(v.views)+" 회",color:"#111827"},
@@ -656,7 +762,7 @@ function Dashboard({contents,onOpenRegister}) {
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         {[
-          {title:"최근 24시간 급상승 Top 10",items:top24h,vk:"views24h"},
+          {title:"최근 업데이트 급상승 Top 10",items:top24h,vk:"views24h"},
           {title:"최근 7일 급상승 Top 10",items:top7d,vk:"views7d"},
         ].map(({title,items,vk})=>(
           <div key={title} style={C.card}>
@@ -681,10 +787,44 @@ function Dashboard({contents,onOpenRegister}) {
   );
 }
 
+// ── 단순 SVG 꺾은선 그래프 (외부 라이브러리 없이)
+function WeeklyLineChart({data}) {
+  if (!data || data.length===0) return <p style={{color:"#9CA3AF",fontSize:13}}>데이터가 없습니다</p>;
+  const W=720, H=220, padL=50, padR=20, padT=20, padB=36;
+  const maxVal = Math.max(...data.map(d=>d.value), 1);
+  const stepX = (W-padL-padR) / (data.length-1 || 1);
+  const points = data.map((d,i)=>{
+    const x = padL + i*stepX;
+    const y = padT + (H-padT-padB) * (1 - d.value/maxVal);
+    return {x,y,...d};
+  });
+  const pathD = points.map((p,i)=> (i===0?"M":"L") + p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" ");
+  const areaD = pathD + ` L${points[points.length-1].x.toFixed(1)},${(H-padB).toFixed(1)} L${points[0].x.toFixed(1)},${(H-padB).toFixed(1)} Z`;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
+      {/* y축 가이드 라인 4개 */}
+      {[0,0.25,0.5,0.75,1].map(t=>{
+        const y = padT + (H-padT-padB)*(1-t);
+        return <line key={t} x1={padL} x2={W-padR} y1={y} y2={y} stroke="#F3F4F6" strokeWidth="1"/>;
+      })}
+      <path d={areaD} fill={RED_LIGHT} opacity="0.6"/>
+      <path d={pathD} fill="none" stroke={RED} strokeWidth="2.5"/>
+      {points.map((p,i)=>(
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="4" fill="#fff" stroke={RED} strokeWidth="2.5"/>
+          <text x={p.x} y={p.y-10} textAnchor="middle" fontSize="10" fill="#374151" fontWeight="700">{p.value>0?fmt(p.value):""}</text>
+          <text x={p.x} y={H-padB+18} textAnchor="middle" fontSize="10" fill="#9CA3AF">{p.label}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 // ════════════════════════════════════════════════════════
 // 콘텐츠 목록
 // ════════════════════════════════════════════════════════
-function ContentsList({contents,onOpenRegister,onEdit,onDelete}) {
+function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updating,updateProgress}) {
   const [search,setSearch]=useState("");
   const [pfFilter,setPfFilter]=useState("전체");
   const [stFilter,setStFilter]=useState("전체");
@@ -727,8 +867,12 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete}) {
           <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>콘텐츠 목록</h1>
           <p style={{margin:0,fontSize:13,color:"#6B7280"}}>{filtered.length}건 표시 중</p>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {updating&&<span style={{fontSize:12,color:RED,fontWeight:600}}>{updateProgress.done}/{updateProgress.total} 처리 중...</span>}
           <button style={C.btnOutline}>↓ CSV</button>
+          <button style={{...C.btnOutline,display:"flex",alignItems:"center",gap:6,opacity:updating?0.6:1}} onClick={onUpdateAll} disabled={updating}>
+            {updating?<Spinner size={13}/>:"↻"} 전체 지표 업데이트
+          </button>
           <button style={C.btnRed} onClick={onOpenRegister}>+ 콘텐츠 등록</button>
         </div>
       </div>
@@ -811,7 +955,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete}) {
                     <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                    <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>24h {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
+                    <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>최근 업데이트 {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
                     <div style={{color:item.views7d>0?"#16A34A":"#9CA3AF"}}>7일 {item.views7d>0?"+"+fmt(item.views7d):"—"}</div>
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
@@ -1014,26 +1158,132 @@ export default function App() {
   const [editItem,setEditItem]=useState(null);
   const [contents,setContents]=useState([]);
   const [settings,setSettings]=useState({ytApiKey:"",apifyToken:""});
+  const [viewHistory,setViewHistory]=useState([]);
+  const [monthlyGoals,setMonthlyGoals]=useState({});
+  const [updating,setUpdating]=useState(false);
+  const [updateProgress,setUpdateProgress]=useState({done:0,total:0});
+
+  const WEEK_MS = 7*24*60*60*1000;
+
+  // 실제 업데이트 로직 (targetContents/targetSettings를 인자로 받아 어디서든 재사용 가능)
+  const runUpdate = async (targetContents, targetSettings, silent=false) => {
+    const targets = targetContents.filter(c => c.platform==="YouTube" || c.platform?.includes("Instagram"));
+    if (targets.length===0) {
+      if(!silent) alert("자동 업데이트 가능한 콘텐츠(YouTube/Instagram)가 없습니다.");
+      return;
+    }
+    if (!targetSettings.ytApiKey && !targetSettings.apifyToken) {
+      if(!silent) alert("설정 페이지에서 YouTube API 키 또는 Apify 토큰을 먼저 등록해주세요.");
+      return;
+    }
+    setUpdating(true);
+    setUpdateProgress({done:0,total:targets.length});
+
+    const nowISO = new Date().toISOString();
+    const updatedList = [...targetContents];
+
+    for (let i=0; i<targets.length; i++) {
+      const item = targets[i];
+      try {
+        let fresh = null;
+        if (item.platform==="YouTube" && targetSettings.ytApiKey) {
+          fresh = await fetchYouTubeStats(item.url, targetSettings.ytApiKey);
+        } else if (item.platform?.includes("Instagram") && targetSettings.apifyToken) {
+          fresh = await fetchInstagramStats(item.url, targetSettings.apifyToken);
+        }
+        if (fresh && fresh.views!=null) {
+          const baseline = item.viewsLastWeek ?? item.views ?? 0;
+          const weeklyGrowth = Math.max(0, fresh.views - baseline);
+          const updated = {
+            ...item,
+            views: fresh.views,
+            likes: fresh.likes ?? item.likes,
+            comments: fresh.comments ?? item.comments,
+            thumbnail: fresh.thumbnail || item.thumbnail,
+            views7d: weeklyGrowth,
+            views24h: weeklyGrowth,
+            viewsLastWeek: fresh.views,
+            lastUpdated: nowISO,
+          };
+          await sb("contents","PATCH",contentToDB(updated),`?id=eq.${item.id}`);
+          // 월별/주별 집계를 위한 이력 기록 (증가분이 있을 때만)
+          if (weeklyGrowth > 0) {
+            try {
+              await sb("view_history","POST",{
+                id: Date.now()+Math.floor(Math.random()*1000),
+                content_id: item.id,
+                views_at_update: fresh.views,
+                growth: weeklyGrowth,
+                recorded_at: nowISO,
+              });
+            } catch(histErr) {
+              console.warn("이력 기록 실패:", histErr.message);
+            }
+          }
+          const idx = updatedList.findIndex(c=>c.id===item.id);
+          if (idx>=0) updatedList[idx]=updated;
+        }
+      } catch(e) {
+        console.warn(`업데이트 실패 (${item.title||item.url}):`, e.message);
+      }
+      setUpdateProgress({done:i+1,total:targets.length});
+      await new Promise(r=>setTimeout(r, 300));
+    }
+
+    setContents(updatedList);
+    setUpdating(false);
+    try {
+      const freshHistory = await sb("view_history","GET",null,"?order=recorded_at.desc&limit=2000");
+      setViewHistory((freshHistory||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, recordedAt:h.recorded_at })));
+    } catch(e) { console.warn("이력 새로고침 실패:", e.message); }
+    if(!silent) alert(`업데이트 완료! ${targets.length}개 콘텐츠의 조회수가 갱신되었습니다.`);
+  };
+
+  // 버튼 클릭용 — 현재 state를 그대로 사용
+  const handleUpdateAll = () => runUpdate(contents, settings, false);
 
   const loadAll=async()=>{
     try{
-      const [contentRows, userRows, settingsRows] = await Promise.all([
+      const [contentRows, userRows, settingsRows, historyRows, goalRows] = await Promise.all([
         sb("contents","GET",null,"?order=id.desc"),
         sb("users","GET"),
         sb("app_settings","GET",null,"?id=eq.1"),
+        sb("view_history","GET",null,"?order=recorded_at.desc&limit=2000"),
+        sb("monthly_goals","GET"),
       ]);
-      setContents((contentRows||[]).map(contentFromDB));
+      const loadedContents = (contentRows||[]).map(contentFromDB);
+      const loadedSettings = { ytApiKey: settingsRows?.[0]?.yt_api_key||"", apifyToken: settingsRows?.[0]?.apify_token||"" };
+      const loadedHistory = (historyRows||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, recordedAt:h.recorded_at }));
+      const loadedGoals = {};
+      (goalRows||[]).forEach(g=>{ loadedGoals[g.month]=g.goal; });
+      setContents(loadedContents);
       setUsers((userRows||[]).map(userFromDB));
-      const s = settingsRows?.[0];
-      setSettings({ ytApiKey: s?.yt_api_key||"", apifyToken: s?.apify_token||"" });
+      setSettings(loadedSettings);
+      setViewHistory(loadedHistory);
+      setMonthlyGoals(loadedGoals);
+      return { contents: loadedContents, settings: loadedSettings };
     }catch(e){
       setInitError(e.message);
+      return null;
     }finally{
       setInitLoading(false);
     }
   };
 
-  useEffect(()=>{ loadAll(); },[]);
+  // 앱 최초 로딩 시: 마지막 갱신으로부터 7일 이상 지난 콘텐츠가 있으면 자동(조용히) 업데이트
+  useEffect(()=>{
+    (async () => {
+      const data = await loadAll();
+      if (!data) return;
+      const { contents: loadedContents, settings: loadedSettings } = data;
+      if (!loadedSettings.ytApiKey && !loadedSettings.apifyToken) return;
+      const targets = loadedContents.filter(c => c.platform==="YouTube" || c.platform?.includes("Instagram"));
+      if (targets.length===0) return;
+      const now = Date.now();
+      const needsUpdate = targets.some(c => !c.lastUpdated || (now - new Date(c.lastUpdated).getTime()) >= WEEK_MS);
+      if (needsUpdate) await runUpdate(loadedContents, loadedSettings, true);
+    })();
+  },[]);
 
   const isAdmin=currentUser?.role==="admin";
   const nav=[
@@ -1076,6 +1326,7 @@ export default function App() {
       alert("삭제 실패: " + e.message);
     }
   };
+
 
   return(
     <div style={{minHeight:"100vh",background:"#FDF8F8",fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
@@ -1131,11 +1382,11 @@ export default function App() {
       </nav>
 
       <main style={{maxWidth:1300,margin:"0 auto",padding:"28px 24px"}}>
-        {page==="dashboard"&&<Dashboard contents={contents} onOpenRegister={()=>setShowRegister(true)}/>}
-        {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)} onEdit={item=>setEditItem(item)} onDelete={handleDeleteContent}/>}
+        {page==="dashboard"&&<Dashboard contents={contents} viewHistory={viewHistory} monthlyGoals={monthlyGoals} onOpenRegister={()=>setShowRegister(true)}/>}
+        {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)} onEdit={item=>setEditItem(item)} onDelete={handleDeleteContent} onUpdateAll={handleUpdateAll} updating={updating} updateProgress={updateProgress}/>}
         {page==="campaigns"&&<Campaigns contents={contents}/>}
         {page==="members"&&<MemberAdmin users={users} refreshUsers={loadAll} currentUser={currentUser}/>}
-        {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser}/>}
+        {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser} monthlyGoals={monthlyGoals} refreshGoals={loadAll}/>}
       </main>
 
       {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
