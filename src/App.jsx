@@ -926,7 +926,10 @@ export default function App() {
   const [currentUser,setCurrentUser]=useState(null);
   const [page,setPage]=useState("dashboard");
   const [showRegister,setShowRegister]=useState(false);
-  const [contents,setContents]=useState([]);
+  const [currentUser,setCurrentUser]=useState(()=>{
+  try{ const saved=localStorage.getItem("sns_current_user"); return saved?JSON.parse(saved):null; }
+  catch{ return null; }
+});
   const [ytApiKey,setYtApiKey]=useState("");
   const [apifyToken,setApifyToken]=useState("");
 
@@ -938,7 +941,7 @@ export default function App() {
     ...(isAdmin?[{key:"members",label:"👥 회원 관리"},{key:"settings",label:"⚙️ 설정"}]:[]),
   ];
 
-  if(!currentUser)return<AuthScreen users={users} setUsers={setUsers} onLogin={u=>{setCurrentUser(u);setPage("dashboard");}}/>;
+  if(!currentUser)return<AuthScreen users={users} setUsers={setUsers} onLogin={u=>{setCurrentUser(u);localStorage.setItem("sns_current_user",JSON.stringify(u));setPage("dashboard");}}/>;
 
   const apiStatus=()=>{
     const yt=!!ytApiKey; const ig=!!apifyToken;
@@ -997,7 +1000,7 @@ export default function App() {
               <div style={{width:26,height:26,borderRadius:"50%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff"}}>{currentUser.name[0]}</div>
               <span style={{fontSize:13,fontWeight:700,color:RED}}>{currentUser.name}</span>
               <span style={{color:RED_BORDER,fontSize:16}}>|</span>
-              <button style={{background:"none",border:"none",fontSize:12,color:"#9CA3AF",cursor:"pointer",padding:0,fontFamily:"inherit"}} onClick={()=>{setCurrentUser(null);setPage("dashboard");}}>로그아웃</button>
+              <button style={{background:"none",border:"none",fontSize:12,color:"#9CA3AF",cursor:"pointer",padding:0,fontFamily:"inherit"}} onClick={()=>{setCurrentUser(null);localStorage.removeItem("sns_current_user");setPage("dashboard");}}>로그아웃</button>
             </div>
           </div>
         </div>
