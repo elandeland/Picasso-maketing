@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "여기에_anon_public_key_붙여넣기"; // ⚠️ secret key 말고 anon public key를 넣어주세요
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; 
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
