@@ -963,7 +963,7 @@ export default function App() {
               <span style={{color:"#fff",fontSize:17}}>📊</span>
             </div>
             <div>
-              <div style={{fontSize:13,fontWeight:800,color:"#111827",lineHeight:1.2}}>SNS 콘텐츠</div>
+              <div style={{fontSize:13,fontWeight:800,color:"#111827",lineHeight:1.2}}>피카소 TF</div>
               <div style={{fontSize:10,color:"#9CA3AF"}}>성과 모니터링</div>
             </div>
           </div>
