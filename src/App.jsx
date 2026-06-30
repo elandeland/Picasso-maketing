@@ -386,8 +386,8 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
       platform:detected||"Instagram Post",
       title:s?.title||form.title||"",
       thumbnail:s?.thumbnail||"",
-      brand:form.brand,campaign:form.campaign,
-      manager:form.manager,collaborator:form.collaborator,
+      campaign:form.campaign,
+manager:form.manager,
       uploadDate:form.uploadDate||s?.publishedAt||new Date().toISOString().slice(0,10),
       memo:form.memo,
       views:s?.views||parseInt(form.manualViews)||0,
@@ -483,11 +483,9 @@ function RegisterModal({onAdd,onClose,ytApiKey,apifyToken}) {
             <label style={C.lbl}>콘텐츠명</label>
             <input style={C.inp} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="(YouTube·Instagram은 자동 입력)"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div><label style={C.lbl}>브랜드</label><input style={C.inp} value={form.brand} onChange={e=>set("brand",e.target.value)}/></div>
-              <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
-              <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
-              <div><label style={C.lbl}>협업자</label><input style={C.inp} value={form.collaborator} onChange={e=>set("collaborator",e.target.value)}/></div>
-            </div>
+  <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
+  <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
+</div>
             <label style={C.lbl}>업로드일</label>
             <input style={C.inp} type="date" value={form.uploadDate} onChange={e=>set("uploadDate",e.target.value)}/>
             <label style={C.lbl}>메모</label>
@@ -714,7 +712,7 @@ function ContentsList({contents,onOpenRegister}) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{borderBottom:"2px solid "+RED_BORDER,background:RED_LIGHT}}>
-                {["콘텐츠","플랫폼","상태","브랜드/캠페인","담당자","참여 지표","증가 추이","업로드일","링크"].map(h=>(
+               {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","링크"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:RED,textAlign:h==="콘텐츠"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -733,10 +731,9 @@ function ContentsList({contents,onOpenRegister}) {
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><PlatformBadge p={item.platform}/></td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                    <div style={{fontWeight:600}}>{item.brand||"—"}</div>
-                    <div style={{color:"#9CA3AF"}}>{item.campaign||"—"}</div>
-                  </td>
+                 <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
+  <div style={{fontWeight:600}}>{item.campaign||"—"}</div>
+</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>{item.manager||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
                     <div style={{fontWeight:600}}>조회 {fmtFull(item.views)}</div>
