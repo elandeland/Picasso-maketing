@@ -1,4 +1,23 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+
+// ─── Supabase 설정
+const SUPABASE_URL = "여기에_Project_URL_붙여넣기";
+const SUPABASE_KEY = "여기에_anon_key_붙여넣기";
+
+const sb = async (table, method="GET", body=null, query="") => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
+    method,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": method==="POST" ? "return=representation" : method==="PATCH" ? "return=representation" : "",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`Supabase 오류: ${res.status}`);
+  return method==="DELETE" ? true : res.json();
+};
 
 const RED = "#C0001A";
 const RED_DARK = "#A0001A";
@@ -41,17 +60,29 @@ const fetchYouTubeStats = async (url, apiKey) => {
 // ══════════════════════════════════════════════════════════
 // Apify Instagram 스크래퍼
 // ══════════════════════════════════════════════════════════
+// URL에서 계정 username과 shortCode 추출
+const extractInstagramInfo = (url="") => {
+  const userMatch = url.match(/instagram\.com\/([^/?]+)/);
+  const username = userMatch ? userMatch[1] : null;
+  const codeMatch = url.match(/\/(?:p|reel)\/([^/?]+)/);
+  const shortCode = codeMatch ? codeMatch[1] : null;
+  return { username, shortCode };
+};
+
 const fetchInstagramStats = async (url, apifyToken) => {
-  // 1. Actor 실행 요청
+  const { username, shortCode } = extractInstagramInfo(url);
+  if (!username) throw new Error("URL에서 계정 정보를 찾을 수 없습니다.");
+
+  // 1. 프로필 기반으로 최근 게시물 50개 스크래핑 (조회수 포함됨)
   const runRes = await fetch(
     `https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=${apifyToken}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        directUrls: [url],
+        directUrls: [`https://www.instagram.com/${username}/`],
         resultsType: "posts",
-        resultsLimit: 1,
+        resultsLimit: 100,
         addParentData: false,
       }),
     }
@@ -64,28 +95,30 @@ const fetchInstagramStats = async (url, apifyToken) => {
   const runId = runData.data?.id;
   if (!runId) throw new Error("Apify Run ID를 받지 못했습니다.");
 
-  // 2. 완료까지 폴링 (최대 60초, 3초 간격)
-  for (let i=0; i<20; i++) {
+  // 2. 완료까지 폴링 (최대 90초, 프로필 스크래핑이라 시간이 더 걸림)
+  for (let i=0; i<30; i++) {
     await new Promise(r=>setTimeout(r,3000));
     const st = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`);
     const stData = await st.json();
     const status = stData.data?.status;
     if (status==="SUCCEEDED") break;
-    if (status==="FAILED"||status==="ABORTED") throw new Error("스크래핑 실패. URL이 올바른지, 공개 게시물인지 확인해주세요.");
-    if (i===19) throw new Error("시간 초과 (60초). 잠시 후 다시 시도해주세요.");
+    if (status==="FAILED"||status==="ABORTED") throw new Error("스크래핑 실패. 계정이 공개 상태인지 확인해주세요.");
+    if (i===29) throw new Error("시간 초과 (90초). 잠시 후 다시 시도해주세요.");
   }
 
-  // 3. 결과 조회
-  const itemRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}&limit=1`);
+  // 3. 결과 중 우리가 찾는 게시물(shortCode 일치) 찾기
+  const itemRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}&limit=50`);
   if (!itemRes.ok) throw new Error("결과 데이터 조회 실패");
   const items = await itemRes.json();
-  if (!items?.length) throw new Error("게시물 데이터를 찾을 수 없습니다. 비공개 계정이거나 삭제된 게시물일 수 있습니다.");
+  if (!items?.length) throw new Error("게시물을 찾을 수 없습니다. 비공개 계정일 수 있습니다.");
 
-  const p = items[0];
+  const p = shortCode ? items.find(x => x.shortCode === shortCode) : items[0];
+  if (!p) throw new Error("해당 게시물을 최근 50개 안에서 찾지 못했습니다. (오래된 게시물일 수 있음)");
+
   return {
     title: p.caption?.slice(0,120) || p.alt || "(캡션 없음)",
     thumbnail: p.displayUrl || p.thumbnailUrl || p.images?.[0] || "",
-    views: p.videoViewCount || p.videoPlayCount || 0,
+    views: p.videoViewCount || p.videoPlayCount || null,
     likes: p.likesCount || p.likes || 0,
     comments: p.commentsCount || p.comments || 0,
     publishedAt: p.timestamp ? new Date(p.timestamp).toISOString().slice(0,10) : "",
