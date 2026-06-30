@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // ⚠️ secret key 말고 anon public key를 넣어주세요
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -519,6 +519,18 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
       }else{
         const newItem={...itemData,id:Date.now()};
         await sb("contents","POST",contentToDB(newItem));
+        // 등록 시점의 조회수를 "첫 증가분"으로 이력에 기록 (월별/주별 집계에 즉시 반영되도록)
+        if(newItem.views>0){
+          try{
+            await sb("view_history","POST",{
+              id: Date.now()+Math.floor(Math.random()*1000),
+              content_id: newItem.id,
+              views_at_update: newItem.views,
+              growth: newItem.views,
+              recorded_at: newItem.uploadDate ? new Date(newItem.uploadDate).toISOString() : new Date().toISOString(),
+            });
+          }catch(histErr){ console.warn("초기 이력 기록 실패:", histErr.message); }
+        }
         onAdd(newItem);
       }
       setSaving(false);onClose();
