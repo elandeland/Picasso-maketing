@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // ⚠️ secret key 말고 anon public key를 넣어주세요
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -200,7 +200,7 @@ const FullPageLoader = ({msg}) => (
 // ════════════════════════════════════════════════════════
 function AuthScreen({onLogin}) {
   const [mode,setMode]=useState("login");
-  const [form,setForm]=useState({name:"",email:"",password:""});
+  const [form,setForm]=useState({name:"",email:"",password:"",passwordConfirm:""});
   const [err,setErr]=useState("");
   const [success,setSuccess]=useState("");
   const [loading,setLoading]=useState(false);
@@ -223,17 +223,19 @@ function AuthScreen({onLogin}) {
   const handleSignup=async()=>{
     if(!form.name.trim())return setErr("이름을 입력해주세요.");
     if(!form.email.includes("@"))return setErr("올바른 이메일을 입력해주세요.");
+    if(!form.password||form.password.length<4)return setErr("비밀번호는 4자 이상 입력해주세요.");
+    if(form.password!==form.passwordConfirm)return setErr("비밀번호가 일치하지 않습니다.");
     setLoading(true);setErr("");
     try{
       const exists = await sb("users","GET",null,`?email=eq.${encodeURIComponent(form.email)}`);
       if(exists?.length) return setErr("이미 가입된 이메일입니다.");
       await sb("users","POST",{
         id: Date.now(), name: form.name.trim(), email: form.email.trim(),
-        password: "", role: "member", status: "대기",
+        password: form.password, role: "member", status: "대기",
         joined_at: new Date().toISOString().slice(0,10),
       });
       setSuccess("가입 신청 완료! 관리자 승인 후 로그인 가능합니다.");
-      setForm({name:"",email:"",password:""});
+      setForm({name:"",email:"",password:"",passwordConfirm:""});
     }catch(e){ setErr("가입 중 오류: "+e.message); }
     finally{ setLoading(false); }
   };
@@ -252,7 +254,7 @@ function AuthScreen({onLogin}) {
         <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",boxShadow:"0 24px 64px rgba(0,0,0,0.25)"}}>
           <div style={{display:"flex",background:"#F3F4F6",borderRadius:10,padding:4,marginBottom:28}}>
             {[{key:"login",label:"로그인"},{key:"signup",label:"회원가입"}].map(t=>(
-              <button key={t.key} onClick={()=>{setMode(t.key);setErr("");setSuccess("");setForm({name:"",email:"",password:""}); }}
+              <button key={t.key} onClick={()=>{setMode(t.key);setErr("");setSuccess("");setForm({name:"",email:"",password:"",passwordConfirm:""}); }}
                 style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:mode===t.key?"#fff":"transparent",color:mode===t.key?RED:"#6B7280",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:mode===t.key?"0 1px 4px rgba(0,0,0,0.1)":"none",transition:"all 0.2s"}}>
                 {t.label}
               </button>
@@ -275,7 +277,11 @@ function AuthScreen({onLogin}) {
               <label style={C.lbl}>이름 *</label>
               <input style={C.inp} type="text" value={form.name} onChange={e=>set("name",e.target.value)} placeholder="실명을 입력하세요"/>
               <label style={C.lbl}>이메일 *</label>
-              <input style={C.inp} type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="이메일을 입력하세요" onKeyDown={e=>e.key==="Enter"&&handleSignup()}/>
+              <input style={C.inp} type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="이메일을 입력하세요"/>
+              <label style={C.lbl}>비밀번호 *</label>
+              <input style={C.inp} type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="4자 이상 입력하세요"/>
+              <label style={C.lbl}>비밀번호 확인 *</label>
+              <input style={C.inp} type="password" value={form.passwordConfirm} onChange={e=>set("passwordConfirm",e.target.value)} placeholder="비밀번호를 다시 입력하세요" onKeyDown={e=>e.key==="Enter"&&handleSignup()}/>
               <p style={{fontSize:12,color:"#9CA3AF",margin:"0 0 20px",lineHeight:1.5}}>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.</p>
               <button style={{...C.btnRed,width:"100%",padding:"12px 0",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:loading?0.7:1}} onClick={handleSignup} disabled={loading}>
                 {loading&&<Spinner size={14}/>}{loading?"신청 중...":"가입 신청"}
