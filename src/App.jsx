@@ -59,101 +59,37 @@ const extractYouTubeId = (url="") => {
   const m4=url.match(/embed\/([^?&]+)/); if(m4)return m4[1];
   return null;
 };
-const fetchYouTubeStats = async (url, apiKey) => {
-  const videoId = extractYouTubeId(url);
-  if (!videoId) throw new Error("YouTube URL에서 영상 ID를 찾을 수 없습니다.");
-  const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoId}&key=${apiKey}`);
+// Edge Function URL (Supabase 프로젝트 URL 기반으로 자동 설정)
+const EDGE_FN_URL = SUPABASE_URL.replace("/rest/v1","") + "/functions/v1/clever-function";
+
+const callEdgeFunction = async (platform, url, apiKeys) => {
+  const res = await fetch(EDGE_FN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+    },
+    body: JSON.stringify({
+      platform,
+      url,
+      apifyToken: apiKeys.apifyToken,
+      ytApiKey: apiKeys.ytApiKey,
+    }),
+  });
   const data = await res.json();
-  if (data.error) throw new Error(data.error.message || "YouTube API 오류");
-  if (!data.items?.length) throw new Error("영상을 찾을 수 없습니다. URL을 확인해주세요.");
-  const item = data.items[0];
-  return {
-    title: item.snippet.title,
-    thumbnail: item.snippet.thumbnails?.medium?.url || "",
-    views: parseInt(item.statistics.viewCount || 0),
-    likes: parseInt(item.statistics.likeCount || 0),
-    comments: parseInt(item.statistics.commentCount || 0),
-    publishedAt: item.snippet.publishedAt?.slice(0,10) || "",
-  };
+  if (!data.ok) throw new Error(data.error || "Edge Function 오류");
+  return data.data;
+};
+
+const fetchYouTubeStats = async (url, apiKey) => {
+  return await callEdgeFunction("youtube", url, { ytApiKey: apiKey });
 };
 
 // ════════════════════════════════════════════════════════
 // Apify Instagram (프로필 기반 — 조회수 포함)
 // ════════════════════════════════════════════════════════
-const extractInstagramInfo = (url="") => {
-  const codeMatch = url.match(/\/(?:p|reel)\/([^/?]+)/);
-  const shortCode = codeMatch ? codeMatch[1] : null;
-  // instagram.com/username/p/CODE 형태면 username 추출 가능
-  // instagram.com/reel/CODE 형태면 username 없음 (reel이 username으로 잘못 잡힘 방지)
-  const profileMatch = url.match(/instagram\.com\/([^/?]+)\/(?:p|reel)\//);
-  const username = profileMatch ? profileMatch[1] : null;
-  return { username, shortCode };
-};
-
 const fetchInstagramStats = async (url, apifyToken) => {
-  const { username, shortCode } = extractInstagramInfo(url);
-  // 트래킹 파라미터 제거한 깔끔한 URL
-  const cleanUrl = shortCode
-    ? `https://www.instagram.com/reel/${shortCode}/`
-    : url.split("?")[0];
-
-  // 계정명 있으면 프로필 기반(조회수 포함 가능), 없으면 게시물 직접 스크래핑
-  const runBody = username ? {
-    directUrls: [`https://www.instagram.com/${username}/`],
-    resultsType: "posts",
-    resultsLimit: 50,
-    addParentData: false,
-  } : {
-    directUrls: [cleanUrl],
-    resultsType: "posts",
-    resultsLimit: 1,
-    addParentData: false,
-  };
-
-  const runRes = await fetch(
-    `https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=${apifyToken}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(runBody),
-    }
-  );
-  if (!runRes.ok) {
-    const e = await runRes.json().catch(()=>({}));
-    throw new Error(e?.error?.message || "Apify 실행 실패. 토큰을 확인해주세요.");
-  }
-  const runData = await runRes.json();
-  const runId = runData.data?.id;
-  if (!runId) throw new Error("Apify Run ID를 받지 못했습니다.");
-
-  for (let i=0; i<30; i++) {
-    await new Promise(r=>setTimeout(r,3000));
-    const st = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`);
-    const stData = await st.json();
-    const status = stData.data?.status;
-    if (status==="SUCCEEDED") break;
-    if (status==="FAILED"||status==="ABORTED") throw new Error("스크래핑 실패. 게시물이 공개 상태인지 확인해주세요.");
-    if (i===29) throw new Error("시간 초과 (90초). 잠시 후 다시 시도해주세요.");
-  }
-
-  const itemRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}&limit=50`);
-  if (!itemRes.ok) throw new Error("결과 데이터 조회 실패");
-  const items = await itemRes.json();
-  if (!items?.length) throw new Error("게시물 데이터를 찾을 수 없습니다. 비공개 계정이거나 삭제된 게시물일 수 있습니다.");
-
-  // shortCode 일치 게시물 찾기, 없으면 첫 번째 항목
-  const p = shortCode
-    ? (items.find(x => x.shortCode === shortCode) || items[0])
-    : items[0];
-
-  return {
-    title: p.caption?.slice(0,120) || p.alt || "(캡션 없음)",
-    thumbnail: p.displayUrl || p.thumbnailUrl || p.images?.[0] || "",
-    views: p.videoViewCount || p.videoPlayCount || null,
-    likes: p.likesCount || p.likes || 0,
-    comments: p.commentsCount || p.comments || 0,
-    publishedAt: p.timestamp ? new Date(p.timestamp).toISOString().slice(0,10) : "",
-  };
+  return await callEdgeFunction("instagram", url, { apifyToken });
 };
 
 // ════════════════════════════════════════════════════════
