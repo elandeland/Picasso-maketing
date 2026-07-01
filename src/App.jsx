@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
 // ════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://kklfzdwxwhzlncvgufag.supabase.co";
-const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // 
+const SUPABASE_KEY = "sb_publishable_xAIJqer8wFD_sIhodTtQJg_s9uZXGJx"; // ⚠️ secret key 말고 anon public key를 넣어주세요
 
 const sb = async (table, method="GET", body=null, query="") => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -81,28 +81,41 @@ const fetchYouTubeStats = async (url, apiKey) => {
 // Apify Instagram (프로필 기반 — 조회수 포함)
 // ════════════════════════════════════════════════════════
 const extractInstagramInfo = (url="") => {
-  const userMatch = url.match(/instagram\.com\/([^/?]+)/);
-  const username = userMatch ? userMatch[1] : null;
   const codeMatch = url.match(/\/(?:p|reel)\/([^/?]+)/);
   const shortCode = codeMatch ? codeMatch[1] : null;
+  // instagram.com/username/p/CODE 형태면 username 추출 가능
+  // instagram.com/reel/CODE 형태면 username 없음 (reel이 username으로 잘못 잡힘 방지)
+  const profileMatch = url.match(/instagram\.com\/([^/?]+)\/(?:p|reel)\//);
+  const username = profileMatch ? profileMatch[1] : null;
   return { username, shortCode };
 };
 
 const fetchInstagramStats = async (url, apifyToken) => {
   const { username, shortCode } = extractInstagramInfo(url);
-  if (!username) throw new Error("URL에서 계정 정보를 찾을 수 없습니다.");
+  // 트래킹 파라미터 제거한 깔끔한 URL
+  const cleanUrl = shortCode
+    ? `https://www.instagram.com/reel/${shortCode}/`
+    : url.split("?")[0];
+
+  // 계정명 있으면 프로필 기반(조회수 포함 가능), 없으면 게시물 직접 스크래핑
+  const runBody = username ? {
+    directUrls: [`https://www.instagram.com/${username}/`],
+    resultsType: "posts",
+    resultsLimit: 50,
+    addParentData: false,
+  } : {
+    directUrls: [cleanUrl],
+    resultsType: "posts",
+    resultsLimit: 1,
+    addParentData: false,
+  };
 
   const runRes = await fetch(
     `https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=${apifyToken}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        directUrls: [`https://www.instagram.com/${username}/`],
-        resultsType: "posts",
-        resultsLimit: 50,
-        addParentData: false,
-      }),
+      body: JSON.stringify(runBody),
     }
   );
   if (!runRes.ok) {
@@ -119,17 +132,19 @@ const fetchInstagramStats = async (url, apifyToken) => {
     const stData = await st.json();
     const status = stData.data?.status;
     if (status==="SUCCEEDED") break;
-    if (status==="FAILED"||status==="ABORTED") throw new Error("스크래핑 실패. 계정이 공개 상태인지 확인해주세요.");
+    if (status==="FAILED"||status==="ABORTED") throw new Error("스크래핑 실패. 게시물이 공개 상태인지 확인해주세요.");
     if (i===29) throw new Error("시간 초과 (90초). 잠시 후 다시 시도해주세요.");
   }
 
   const itemRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}&limit=50`);
   if (!itemRes.ok) throw new Error("결과 데이터 조회 실패");
   const items = await itemRes.json();
-  if (!items?.length) throw new Error("게시물을 찾을 수 없습니다. 비공개 계정일 수 있습니다.");
+  if (!items?.length) throw new Error("게시물 데이터를 찾을 수 없습니다. 비공개 계정이거나 삭제된 게시물일 수 있습니다.");
 
-  const p = shortCode ? items.find(x => x.shortCode === shortCode) : items[0];
-  if (!p) throw new Error("해당 게시물을 최근 50개 안에서 찾지 못했습니다.");
+  // shortCode 일치 게시물 찾기, 없으면 첫 번째 항목
+  const p = shortCode
+    ? (items.find(x => x.shortCode === shortCode) || items[0])
+    : items[0];
 
   return {
     title: p.caption?.slice(0,120) || p.alt || "(캡션 없음)",
