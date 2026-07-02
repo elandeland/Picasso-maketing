@@ -31,7 +31,7 @@ const contentFromDB = (r) => ({
   views:r.views, likes:r.likes, comments:r.comments,
   views24h:r.views_24h, views7d:r.views_7d, status:r.status,
   lastUpdated:r.last_updated, viewsLastWeek:r.views_last_week,
-  groupName:r.group_name||"",
+  groupName:r.group_name||"", channel:r.channel||"",
 });
 const contentToDB = (c) => ({
   id:c.id, url:c.url, platform:c.platform, title:c.title, thumbnail:c.thumbnail,
@@ -39,7 +39,7 @@ const contentToDB = (c) => ({
   views:c.views, likes:c.likes, comments:c.comments,
   views_24h:c.views24h, views_7d:c.views7d, status:c.status,
   last_updated:c.lastUpdated, views_last_week:c.viewsLastWeek,
-  group_name:c.groupName||"",
+  group_name:c.groupName||"", channel:c.channel||"",
 });
 const userFromDB = (r) => ({ id:r.id, name:r.name, email:r.email, password:r.password, role:r.role, status:r.status, joinedAt:r.joined_at });
 
@@ -441,8 +441,8 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
     url:editItem.url||"", title:editItem.title||"", campaign:editItem.campaign||"",
     manager:editItem.manager||"", uploadDate:editItem.uploadDate||"", memo:editItem.memo||"",
     manualViews:editItem.views||"", manualLikes:editItem.likes||"", manualComments:editItem.comments||"",
-    groupName:editItem.groupName||"",
-  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:"",groupName:""});
+    groupName:editItem.groupName||"", channel:editItem.channel||"",
+  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:"",groupName:"",channel:""});
   const [showGroupSuggestions,setShowGroupSuggestions]=useState(false);
 
   // 기존 그룹명 목록 (중복 제거)
@@ -469,6 +469,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       setPreview(s);
       if(!form.title)set("title",s.title);
       if(!form.uploadDate)set("uploadDate",s.publishedAt);
+      if(s.channel)set("channel",s.channel);
     }catch(e){setFetchErr(e.message);}
     finally{setLoading(false);}
   };
@@ -499,6 +500,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       lastUpdated:editItem?.lastUpdated||new Date().toISOString(),
       viewsLastWeek:editItem?.viewsLastWeek ?? (s?.views||parseInt(form.manualViews)||0),
       groupName:form.groupName||"",
+      channel:form.channel||"",
     };
     try{
       if(isEditMode){
@@ -628,6 +630,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
               <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
+              <div><label style={C.lbl}>채널명 <span style={{fontWeight:400,color:"#9CA3AF"}}>(자동 입력)</span></label><input style={{...C.inp,background:"#F9FAFB",color:form.channel?"#111827":"#9CA3AF"}} value={form.channel||""} readOnly placeholder="URL 입력 시 자동으로 채워집니다"/></div>
             </div>
             <label style={C.lbl}>업로드일</label>
             <input style={C.inp} type="date" value={form.uploadDate} onChange={e=>set("uploadDate",e.target.value)}/>
@@ -793,7 +796,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
                 <Thumb src={item.thumbnail}/>
                 <div style={{flex:1,minWidth:0}}>
                   <PlatformBadge p={item.platform}/>
-                  <p style={{margin:"3px 0 2px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title||item.url}</p>
+                  <p style={{margin:"3px 0 2px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.title||item.url}</p>
                   <StatusBadge s={item.status}/>
                 </div>
                 <span style={{fontSize:13,fontWeight:700,color:"#16A34A",flexShrink:0}}>+{fmt(item[vk])}</span>
@@ -991,7 +994,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{borderBottom:"2px solid "+RED_BORDER,background:RED_LIGHT}}>
-                {["콘텐츠","플랫폼","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","액션"].map(h=>(
+                {["콘텐츠","플랫폼","채널","상태","캠페인","담당자","참여 지표","증가 추이","업로드일","액션"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:RED,textAlign:h==="콘텐츠"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -1004,7 +1007,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                       <Thumb src={item.thumbnail}/>
                       <div style={{minWidth:0}}>
                         {item.isGroup&&<span style={{fontSize:10,fontWeight:700,color:RED,background:"#FFE4E8",padding:"1px 6px",borderRadius:10,marginBottom:3,display:"inline-block"}}>그룹 {item.items?.length}개</span>}
-                        <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>{item.title||item.groupName||"(제목 없음)"}</p>
+                        <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:320}}>{item.title||item.groupName||"(제목 없음)"}</p>
                         {!item.isGroup&&<a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>}
                         {item.isGroup&&<div style={{fontSize:11,color:"#9CA3AF"}}>{item.platforms?.join(" + ")}</div>}
                       </div>
@@ -1014,6 +1017,12 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                     {item.isGroup
                       ? <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center"}}>{item.platforms?.map(p=><PlatformBadge key={p} p={p}/>)}</div>
                       : <PlatformBadge p={item.platform}/>
+                    }
+                  </td>
+                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>
+                    {item.isGroup
+                      ? <span style={{color:"#9CA3AF"}}>—</span>
+                      : (item.channel||"—")
                     }
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
@@ -1076,6 +1085,7 @@ function YtRegisterModal({onAdd,onUpdate,onClose,ytApiKey,editItem}) {
       setPreview(s);
       if(!form.title)set("title",s.title);
       if(!form.uploadDate)set("uploadDate",s.publishedAt);
+      if(s.channel)set("channel",s.channel);
     }catch(e){setFetchErr(e.message);}
     finally{setLoading(false);}
   };
@@ -1272,7 +1282,7 @@ function YoutubeDashboard({ytContents,onOpenRegister}) {
                 <Thumb src={item.thumbnail}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:10,fontWeight:700,color:item.campaign==="큐레이터알"?"#FF0000":"#F59E0B",marginBottom:1}}>{item.campaign}</div>
-                  <p style={{margin:"0 0 1px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title||item.url}</p>
+                  <p style={{margin:"0 0 1px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.title||item.url}</p>
                   <a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF"}}>보기 ↗</a>
                 </div>
                 <span style={{fontSize:13,fontWeight:700,color:"#111827",flexShrink:0}}>{label(item)}</span>
@@ -1807,7 +1817,7 @@ export default function App() {
     <div style={{minHeight:"100vh",background:THEME.bg,fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
       <style>{`*{box-sizing:border-box;}button{transition:all 0.15s;font-family:inherit;}button:hover{opacity:0.82;}@keyframes spin{to{transform:rotate(360deg);}}input:focus,textarea:focus,select:focus{outline:none;border-color:${THEME.accent}!important;box-shadow:0 0 0 3px ${isYT?"rgba(26,115,232,0.1)":"rgba(192,0,26,0.1)"};}`}</style>
 
-      <nav style={{background:"#fff",borderBottom:`2px solid ${THEME.navBorder}`,position:"sticky",top:0,zIndex:100,boxShadow:`0 1px 8px ${THEME.navShadow}`}}>
+      <nav style={{background:"#fff",borderBottom:`2px solid ${THEME.navBorder}`,position:"sticky",top:0,zIndex:9990,boxShadow:`0 1px 8px ${THEME.navShadow}`}}>
         <div style={{maxWidth:1300,margin:"0 auto",padding:"0 16px",display:"flex",alignItems:"center",height:58,gap:4,overflowX:"auto",whiteSpace:"nowrap"}}>
 
           {/* 워크스페이스 드롭다운 로고 */}
@@ -1823,7 +1833,7 @@ export default function App() {
               <span style={{fontSize:10,color:"#9CA3AF",marginLeft:2}}>▼</span>
             </button>
             {showWorkspaceDrop&&(
-              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:200,minWidth:180,overflow:"hidden"}}>
+              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:9999,minWidth:180,overflow:"hidden"}}>
                 <div style={{padding:"8px 0"}}>
                   <div style={{padding:"4px 12px",fontSize:11,color:"#9CA3AF",fontWeight:700}}>워크스페이스 선택</div>
                   {[
@@ -1878,7 +1888,7 @@ export default function App() {
       </nav>
 
       {/* 드롭다운 외부 클릭 시 닫기 */}
-      {showWorkspaceDrop&&<div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setShowWorkspaceDrop(false)}/>}
+      {showWorkspaceDrop&&<div style={{position:"fixed",inset:0,zIndex:9998}} onClick={()=>setShowWorkspaceDrop(false)}/>}
 
       <main style={{maxWidth:1300,margin:"0 auto",padding:"28px 24px"}}>
         {page==="dashboard"&&<Dashboard contents={contents} viewHistory={viewHistory} monthlyGoals={monthlyGoals} onOpenRegister={()=>setShowRegister(true)}/>}
