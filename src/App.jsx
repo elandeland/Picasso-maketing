@@ -979,7 +979,10 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
       )}
       <div style={C.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontSize:14,fontWeight:700}}>콘텐츠 리스트 ({filtered.length}건)</div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontSize:14,fontWeight:700}}>콘텐츠 리스트 ({filtered.length}건)</div>
+            <span style={{fontSize:11,color:"#9CA3AF"}}>※ 인스타그램 좋아요×100 조회수 환산 포함</span>
+          </div>
           <select style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
             <option>최근 등록순</option><option>조회수 높은순</option><option>7일 증가순</option>
           </select>
@@ -1020,7 +1023,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                     <div style={{fontWeight:600}}>조회 {fmtFull(item.effectiveViewsTotal||item.views)}</div>
                     {item.isGroup
                       ? <div style={{color:"#9CA3AF",fontSize:11}}>{item.platforms?.includes("Instagram Reel")||item.platforms?.includes("Instagram Post")?"좋아요×100 포함 합산":""}</div>
-                      : <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}{item.platform?.includes("Instagram")&&item.likes>0?<span style={{color:RED}}> (×100 환산)</span>:""}</div>
+                      : <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>
                     }
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
@@ -1701,12 +1704,30 @@ export default function App() {
   },[]);
 
   const isAdmin=currentUser?.role==="admin";
-  const nav=[
+  const [workspace,setWorkspace]=useState("picasso"); // "picasso" | "youtube"
+  const [showWorkspaceDrop,setShowWorkspaceDrop]=useState(false);
+
+  // 워크스페이스 전환 시 기본 페이지로 이동
+  const switchWorkspace=(ws)=>{
+    setWorkspace(ws);
+    setPage(ws==="picasso"?"dashboard":"yt_dashboard");
+    setShowWorkspaceDrop(false);
+  };
+
+  const isYT = workspace==="youtube";
+  const BLUE="#1A73E8";
+  const BLUE_DARK="#1557B0";
+  const BLUE_LIGHT="#EEF4FD";
+  const BLUE_BORDER="#BDD5FB";
+  const THEME={ bg: isYT?"#F0F4FF":"#FDF8F8", navBorder: isYT?BLUE_BORDER:RED_BORDER, navShadow: isYT?"rgba(26,115,232,0.07)":"rgba(192,0,26,0.07)", accent: isYT?BLUE:RED, accentDark: isYT?BLUE_DARK:RED_DARK, accentLight: isYT?BLUE_LIGHT:RED_LIGHT };
+
+  const nav = isYT ? [
+    {key:"yt_dashboard",label:"유튜브 대시보드"},
+    {key:"yt_contents",label:"유튜브 콘텐츠"},
+  ] : [
     {key:"dashboard",label:"대시보드"},
     {key:"contents",label:"콘텐츠"},
     {key:"campaigns",label:"캠페인"},
-    {key:"yt_dashboard",label:"📺 유튜브 대시보드"},
-    {key:"yt_contents",label:"📺 유튜브 콘텐츠"},
     ...(isAdmin?[{key:"members",label:"👥 회원 관리"},{key:"settings",label:"⚙️ 설정"}]:[]),
   ];
 
@@ -1783,24 +1804,50 @@ export default function App() {
   };
 
   return(
-    <div style={{minHeight:"100vh",background:"#FDF8F8",fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
-      <style>{`*{box-sizing:border-box;}button{transition:all 0.15s;font-family:inherit;}button:hover{opacity:0.82;}@keyframes spin{to{transform:rotate(360deg);}}input:focus,textarea:focus,select:focus{outline:none;border-color:${RED}!important;box-shadow:0 0 0 3px rgba(192,0,26,0.1);}`}</style>
+    <div style={{minHeight:"100vh",background:THEME.bg,fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
+      <style>{`*{box-sizing:border-box;}button{transition:all 0.15s;font-family:inherit;}button:hover{opacity:0.82;}@keyframes spin{to{transform:rotate(360deg);}}input:focus,textarea:focus,select:focus{outline:none;border-color:${THEME.accent}!important;box-shadow:0 0 0 3px ${isYT?"rgba(26,115,232,0.1)":"rgba(192,0,26,0.1)"};}`}</style>
 
-      <nav style={{background:"#fff",borderBottom:"2px solid "+RED_BORDER,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 8px rgba(192,0,26,0.07)"}}>
+      <nav style={{background:"#fff",borderBottom:`2px solid ${THEME.navBorder}`,position:"sticky",top:0,zIndex:100,boxShadow:`0 1px 8px ${THEME.navShadow}`}}>
         <div style={{maxWidth:1300,margin:"0 auto",padding:"0 16px",display:"flex",alignItems:"center",height:58,gap:4,overflowX:"auto",whiteSpace:"nowrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginRight:16,flexShrink:0}}>
-            <div style={{width:34,height:34,background:RED,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <span style={{color:"#fff",fontSize:17}}>📊</span>
-            </div>
-            <div>
-              <div style={{fontSize:13,fontWeight:800,color:"#111827",lineHeight:1.2}}>피카소 TF</div>
-              <div style={{fontSize:10,color:"#9CA3AF"}}>조회수 모니터링</div>
-            </div>
+
+          {/* 워크스페이스 드롭다운 로고 */}
+          <div style={{position:"relative",marginRight:16,flexShrink:0}}>
+            <button onClick={()=>setShowWorkspaceDrop(d=>!d)} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",borderRadius:10,border:`1px solid ${THEME.navBorder}`,background:THEME.accentLight,cursor:"pointer"}}>
+              <div style={{width:28,height:28,background:THEME.accent,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>
+                {isYT?"📺":"📊"}
+              </div>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:12,fontWeight:800,color:THEME.accent,lineHeight:1.2}}>{isYT?"유튜브 채널":"피카소 TF"}</div>
+                <div style={{fontSize:10,color:"#9CA3AF"}}>{isYT?"큐레이터알 · 단독 쇼츠":"조회수 모니터링"}</div>
+              </div>
+              <span style={{fontSize:10,color:"#9CA3AF",marginLeft:2}}>▼</span>
+            </button>
+            {showWorkspaceDrop&&(
+              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:200,minWidth:180,overflow:"hidden"}}>
+                <div style={{padding:"8px 0"}}>
+                  <div style={{padding:"4px 12px",fontSize:11,color:"#9CA3AF",fontWeight:700}}>워크스페이스 선택</div>
+                  {[
+                    {key:"picasso",label:"피카소 TF",sub:"대시보드 · 콘텐츠 · 캠페인",icon:"📊",color:RED},
+                    {key:"youtube",label:"유튜브 채널",sub:"큐레이터알 · 단독 쇼츠",icon:"📺",color:BLUE},
+                  ].map(w=>(
+                    <button key={w.key} onClick={()=>switchWorkspace(w.key)}
+                      style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"none",background:workspace===w.key?`${w.color}10`:"#fff",cursor:"pointer",textAlign:"left"}}>
+                      <div style={{width:28,height:28,background:w.color,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{w.icon}</div>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:workspace===w.key?w.color:"#111827"}}>{w.label}</div>
+                        <div style={{fontSize:11,color:"#9CA3AF"}}>{w.sub}</div>
+                      </div>
+                      {workspace===w.key&&<span style={{marginLeft:"auto",color:w.color,fontSize:14}}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {nav.map(item=>(
             <button key={item.key}
-              style={{padding:"7px 12px",borderRadius:8,border:"none",background:page===item.key?RED:"transparent",color:page===item.key?"#fff":"#374151",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}
+              style={{padding:"7px 12px",borderRadius:8,border:"none",background:page===item.key?THEME.accent:"transparent",color:page===item.key?"#fff":"#374151",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}
               onClick={()=>setPage(item.key)}>
               {item.label}
             </button>
@@ -1809,7 +1856,7 @@ export default function App() {
           <div style={{flex:1,minWidth:8}}/>
 
           <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-            {isAdmin&&(status?(
+            {!isYT&&isAdmin&&(status?(
               <span style={{fontSize:12,color:status.color,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
                 <span style={{width:7,height:7,borderRadius:"50%",background:status.dot,display:"inline-block"}}/>
                 {status.label}
@@ -1820,20 +1867,18 @@ export default function App() {
               </button>
             ))}
 
-            <button style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:8,border:"none",background:RED_DARK,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
-              onClick={()=>setShowRegister(true)}>
-              <span style={{fontSize:17,lineHeight:1}}>+</span> 콘텐츠 등록
-            </button>
-
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px",border:"1px solid "+RED_BORDER,borderRadius:8,background:RED_LIGHT}}>
-              <div style={{width:26,height:26,borderRadius:"50%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff"}}>{currentUser.name[0]}</div>
-              <span style={{fontSize:13,fontWeight:700,color:RED}}>{currentUser.name}</span>
-              <span style={{color:RED_BORDER,fontSize:16}}>|</span>
-              <button style={{background:"none",border:"none",fontSize:12,color:"#9CA3AF",cursor:"pointer",padding:0,fontFamily:"inherit"}} onClick={()=>{setCurrentUser(null);localStorage.removeItem("sns_current_user");setPage("dashboard");}}>로그아웃</button>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px",border:`1px solid ${THEME.navBorder}`,borderRadius:8,background:THEME.accentLight}}>
+              <div style={{width:26,height:26,borderRadius:"50%",background:THEME.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff"}}>{currentUser.name[0]}</div>
+              <span style={{fontSize:13,fontWeight:700,color:THEME.accent}}>{currentUser.name}</span>
+              <span style={{color:THEME.navBorder,fontSize:16}}>|</span>
+              <button style={{background:"none",border:"none",fontSize:12,color:"#9CA3AF",cursor:"pointer",padding:0,fontFamily:"inherit"}} onClick={()=>{setCurrentUser(null);localStorage.removeItem("sns_current_user");setPage("dashboard");setWorkspace("picasso");}}>로그아웃</button>
             </div>
           </div>
         </div>
       </nav>
+
+      {/* 드롭다운 외부 클릭 시 닫기 */}
+      {showWorkspaceDrop&&<div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setShowWorkspaceDrop(false)}/>}
 
       <main style={{maxWidth:1300,margin:"0 auto",padding:"28px 24px"}}>
         {page==="dashboard"&&<Dashboard contents={contents} viewHistory={viewHistory} monthlyGoals={monthlyGoals} onOpenRegister={()=>setShowRegister(true)}/>}
