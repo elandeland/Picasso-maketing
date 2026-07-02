@@ -31,6 +31,7 @@ const contentFromDB = (r) => ({
   views:r.views, likes:r.likes, comments:r.comments,
   views24h:r.views_24h, views7d:r.views_7d, status:r.status,
   lastUpdated:r.last_updated, viewsLastWeek:r.views_last_week,
+  groupName:r.group_name||"",
 });
 const contentToDB = (c) => ({
   id:c.id, url:c.url, platform:c.platform, title:c.title, thumbnail:c.thumbnail,
@@ -38,8 +39,24 @@ const contentToDB = (c) => ({
   views:c.views, likes:c.likes, comments:c.comments,
   views_24h:c.views24h, views_7d:c.views7d, status:c.status,
   last_updated:c.lastUpdated, views_last_week:c.viewsLastWeek,
+  group_name:c.groupName||"",
 });
 const userFromDB = (r) => ({ id:r.id, name:r.name, email:r.email, password:r.password, role:r.role, status:r.status, joinedAt:r.joined_at });
+
+const ytFromDB = (r) => ({
+  id:r.id, url:r.url, title:r.title, thumbnail:r.thumbnail,
+  campaign:r.campaign, uploadDate:r.upload_date, memo:r.memo,
+  views:r.views, likes:r.likes, comments:r.comments,
+  views7d:r.views_7d, viewsLastWeek:r.views_last_week,
+  lastUpdated:r.last_updated, platform:"YouTube",
+});
+const ytToDB = (c) => ({
+  id:c.id, url:c.url, title:c.title, thumbnail:c.thumbnail,
+  campaign:c.campaign, upload_date:c.uploadDate, memo:c.memo,
+  views:c.views, likes:c.likes, comments:c.comments,
+  views_7d:c.views7d, views_last_week:c.viewsLastWeek,
+  last_updated:c.lastUpdated,
+});
 
 // ════════════════════════════════════════════════════════
 // 컬러 토큰
@@ -97,6 +114,14 @@ const fetchInstagramStats = async (url, apifyToken) => {
 // ════════════════════════════════════════════════════════
 const fmt = (n) => { if(!n)return"0"; if(n>=1000000)return(n/1000000).toFixed(1)+"M"; if(n>=1000)return(n/1000).toFixed(1)+"K"; return n.toLocaleString(); };
 const fmtFull = (n) => (n||0).toLocaleString();
+
+// 인스타그램은 좋아요×100을 조회수로 환산해서 합산
+const effectiveViews = (item) => {
+  if (item.platform?.includes("Instagram")) {
+    return (item.views||0) + (item.likes||0) * 100;
+  }
+  return item.views||0;
+};
 const detectPlatform = (url="") => {
   if(url.includes("youtube.com")||url.includes("youtu.be"))return"YouTube";
   if(url.includes("instagram.com/reel"))return"Instagram Reel";
@@ -410,13 +435,19 @@ function Settings({settings,refreshSettings,currentUser,monthlyGoals,refreshGoal
 // ════════════════════════════════════════════════════════
 // 콘텐츠 등록 모달
 // ════════════════════════════════════════════════════════
-function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
+function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allContents}) {
   const isEditMode = !!editItem;
   const [form,setForm]=useState(()=> editItem ? {
     url:editItem.url||"", title:editItem.title||"", campaign:editItem.campaign||"",
     manager:editItem.manager||"", uploadDate:editItem.uploadDate||"", memo:editItem.memo||"",
     manualViews:editItem.views||"", manualLikes:editItem.likes||"", manualComments:editItem.comments||"",
-  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:""});
+    groupName:editItem.groupName||"",
+  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:"",groupName:""});
+  const [showGroupSuggestions,setShowGroupSuggestions]=useState(false);
+
+  // 기존 그룹명 목록 (중복 제거)
+  const existingGroups=[...new Set((allContents||[]).map(c=>c.groupName).filter(Boolean))];
+  const filteredGroups=existingGroups.filter(g=>g.toLowerCase().includes((form.groupName||"").toLowerCase())&&g!==form.groupName);
   const [loading,setLoading]=useState(false);
   const [saving,setSaving]=useState(false);
   const [fetchErr,setFetchErr]=useState("");
@@ -467,6 +498,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
       views24h:editItem?.views24h||0,views7d:editItem?.views7d||0,status:"성공",
       lastUpdated:editItem?.lastUpdated||new Date().toISOString(),
       viewsLastWeek:editItem?.viewsLastWeek ?? (s?.views||parseInt(form.manualViews)||0),
+      groupName:form.groupName||"",
     };
     try{
       if(isEditMode){
@@ -575,6 +607,24 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem}) {
             <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700}}>콘텐츠 정보</h3>
             <label style={C.lbl}>콘텐츠명</label>
             <input style={C.inp} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="(YouTube·Instagram은 자동 입력)"/>
+            <label style={C.lbl}>그룹명 <span style={{fontWeight:400,color:"#9CA3AF"}}>(선택 — 같은 이름끼리 합산 표시)</span></label>
+            <div style={{position:"relative",marginBottom:12}}>
+              <input style={{...C.inp,marginBottom:0}} value={form.groupName}
+                onChange={e=>{set("groupName",e.target.value);setShowGroupSuggestions(true);}}
+                onFocus={()=>setShowGroupSuggestions(true)}
+                onBlur={()=>setTimeout(()=>setShowGroupSuggestions(false),200)}
+                placeholder="예: 피카소 도예전 메인영상"/>
+              {showGroupSuggestions&&filteredGroups.length>0&&(
+                <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.1)",zIndex:100,maxHeight:160,overflowY:"auto"}}>
+                  {filteredGroups.map(g=>(
+                    <div key={g} style={{padding:"10px 14px",cursor:"pointer",fontSize:13,color:"#374151"}}
+                      onMouseDown={()=>{set("groupName",g);setShowGroupSuggestions(false);}}>
+                      🔗 {g}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div><label style={C.lbl}>캠페인</label><input style={C.inp} value={form.campaign} onChange={e=>set("campaign",e.target.value)}/></div>
               <div><label style={C.lbl}>담당자</label><input style={C.inp} value={form.manager} onChange={e=>set("manager",e.target.value)}/></div>
@@ -801,13 +851,53 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
 
   const filtered=useMemo(()=>{
     let r=[...contents];
-    if(search)r=r.filter(c=>(c.title||c.url||"").toLowerCase().includes(search.toLowerCase()));
+    if(search)r=r.filter(c=>(c.title||c.url||c.groupName||"").toLowerCase().includes(search.toLowerCase()));
     if(pfFilter!=="전체")r=r.filter(c=>c.platform===pfFilter);
     if(stFilter!=="전체")r=r.filter(c=>c.status===stFilter);
-    if(sortBy==="최근 등록순")r.sort((a,b)=>b.id-a.id);
-    if(sortBy==="조회수 높은순")r.sort((a,b)=>(b.views||0)-(a.views||0));
-    if(sortBy==="7일 증가순")r.sort((a,b)=>(b.views7d||0)-(a.views7d||0));
-    return r;
+
+    // 그룹명이 있는 것들은 합산해서 하나의 행으로 만들기
+    const groupMap={};
+    const ungrouped=[];
+    r.forEach(c=>{
+      if(c.groupName&&c.groupName.trim()){
+        const k=c.groupName.trim();
+        if(!groupMap[k]) groupMap[k]={
+          id:"group_"+k, isGroup:true, groupName:k,
+          platforms:[], titles:[], thumbnails:[],
+          views:0, likes:0, comments:0, views7d:0, views24h:0,
+          effectiveViewsTotal:0, items:[],
+          uploadDate:"", campaign:"", manager:"", status:"성공",
+        };
+        const g=groupMap[k];
+        g.items.push(c);
+        if(!g.platforms.includes(c.platform))g.platforms.push(c.platform);
+        if(c.title)g.titles.push(c.title);
+        if(c.thumbnail&&!g.thumbnails.includes(c.thumbnail))g.thumbnails.push(c.thumbnail);
+        g.views+=c.views||0;
+        g.likes+=c.likes||0;
+        g.comments+=c.comments||0;
+        g.views7d+=c.views7d||0;
+        g.views24h+=c.views24h||0;
+        g.effectiveViewsTotal+=effectiveViews(c);
+        if(!g.campaign&&c.campaign)g.campaign=c.campaign;
+        if(!g.manager&&c.manager)g.manager=c.manager;
+        if(!g.uploadDate&&c.uploadDate)g.uploadDate=c.uploadDate;
+      } else {
+        ungrouped.push({...c, effectiveViewsTotal:effectiveViews(c)});
+      }
+    });
+
+    // 그룹 대표 제목 = 조회수 가장 높은 항목의 제목
+    const groupRows=Object.values(groupMap).map(g=>{
+      const topItem=[...g.items].sort((a,b)=>(effectiveViews(b))-(effectiveViews(a)))[0];
+      return {...g, title:topItem?.title||g.groupName, thumbnail:topItem?.thumbnail||g.thumbnails[0]||"", url:topItem?.url||""};
+    });
+
+    let result=[...groupRows,...ungrouped];
+    if(sortBy==="최근 등록순")result.sort((a,b)=>b.id.toString().localeCompare(a.id.toString()));
+    if(sortBy==="조회수 높은순")result.sort((a,b)=>(b.effectiveViewsTotal||b.views||0)-(a.effectiveViewsTotal||a.views||0));
+    if(sortBy==="7일 증가순")result.sort((a,b)=>(b.views7d||0)-(a.views7d||0));
+    return result;
   },[contents,search,pfFilter,stFilter,sortBy]);
 
   const campRank=useMemo(()=>{
@@ -905,23 +995,33 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
             </thead>
             <tbody>
               {filtered.map((item,idx)=>(
-                <tr key={item.id} style={{borderBottom:"1px solid #FCF0F1",background:idx%2?"#FFFAFA":"#fff"}}>
+                <tr key={item.id} style={{borderBottom:"1px solid #FCF0F1",background:item.isGroup?RED_LIGHT:idx%2?"#FFFAFA":"#fff"}}>
                   <td style={{padding:12,verticalAlign:"middle"}}>
                     <div style={{display:"flex",gap:10,alignItems:"center"}}>
                       <Thumb src={item.thumbnail}/>
                       <div style={{minWidth:0}}>
-                        <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>{item.title||"(제목 없음)"}</p>
-                        <a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>
+                        {item.isGroup&&<span style={{fontSize:10,fontWeight:700,color:RED,background:"#FFE4E8",padding:"1px 6px",borderRadius:10,marginBottom:3,display:"inline-block"}}>그룹 {item.items?.length}개</span>}
+                        <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>{item.title||item.groupName||"(제목 없음)"}</p>
+                        {!item.isGroup&&<a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>}
+                        {item.isGroup&&<div style={{fontSize:11,color:"#9CA3AF"}}>{item.platforms?.join(" + ")}</div>}
                       </div>
                     </div>
                   </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><PlatformBadge p={item.platform}/></td>
+                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
+                    {item.isGroup
+                      ? <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center"}}>{item.platforms?.map(p=><PlatformBadge key={p} p={p}/>)}</div>
+                      : <PlatformBadge p={item.platform}/>
+                    }
+                  </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,fontWeight:600}}>{item.campaign||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>{item.manager||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                    <div style={{fontWeight:600}}>조회 {fmtFull(item.views)}</div>
-                    <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>
+                    <div style={{fontWeight:600}}>조회 {fmtFull(item.effectiveViewsTotal||item.views)}</div>
+                    {item.isGroup
+                      ? <div style={{color:"#9CA3AF",fontSize:11}}>{item.platforms?.includes("Instagram Reel")||item.platforms?.includes("Instagram Post")?"좋아요×100 포함 합산":""}</div>
+                      : <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}{item.platform?.includes("Instagram")&&item.likes>0?<span style={{color:RED}}> (×100 환산)</span>:""}</div>
+                    }
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
                     <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>최근 업데이트 {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
@@ -929,11 +1029,14 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                   </td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
                   <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
-                    <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-                      <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 8px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
-                      <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer",fontWeight:600}}>✏️</button>
-                      <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer",fontWeight:600}}>🗑</button>
-                    </div>
+                    {item.isGroup
+                      ? <span style={{fontSize:12,color:"#9CA3AF"}}>{item.items?.length}개 합산</span>
+                      : <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                          <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 8px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
+                          <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer",fontWeight:600}}>✏️</button>
+                          <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer",fontWeight:600}}>🗑</button>
+                        </div>
+                    }
                   </td>
                 </tr>
               ))}
@@ -946,8 +1049,346 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
 }
 
 // ════════════════════════════════════════════════════════
-// 캠페인 분석
+// 유튜브 채널 전용 등록 모달
 // ════════════════════════════════════════════════════════
+function YtRegisterModal({onAdd,onUpdate,onClose,ytApiKey,editItem}) {
+  const isEditMode=!!editItem;
+  const [form,setForm]=useState(()=>editItem?{
+    url:editItem.url||"",title:editItem.title||"",
+    campaign:editItem.campaign||"큐레이터알",
+    uploadDate:editItem.uploadDate||"",memo:editItem.memo||"",
+    manualViews:editItem.views||"",
+  }:{url:"",title:"",campaign:"큐레이터알",uploadDate:"",memo:"",manualViews:""});
+  const [loading,setLoading]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [fetchErr,setFetchErr]=useState("");
+  const [preview,setPreview]=useState(null);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const handleUrlBlur=async()=>{
+    if(!form.url||!ytApiKey)return;
+    setLoading(true);setFetchErr("");
+    try{
+      const s=await fetchYouTubeStats(form.url,ytApiKey);
+      setPreview(s);
+      if(!form.title)set("title",s.title);
+      if(!form.uploadDate)set("uploadDate",s.publishedAt);
+    }catch(e){setFetchErr(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const handleSave=async()=>{
+    if(!form.url.trim())return alert("URL을 입력해주세요.");
+    setSaving(true);
+    const itemData={
+      url:form.url.trim(),
+      title:preview?.title||form.title||"",
+      thumbnail:preview?.thumbnail||editItem?.thumbnail||"",
+      campaign:form.campaign,
+      uploadDate:form.uploadDate||preview?.publishedAt||new Date().toISOString().slice(0,10),
+      memo:form.memo,
+      views:preview?.views||parseInt(form.manualViews)||0,
+      likes:preview?.likes||0,
+      comments:preview?.comments||0,
+      views7d:editItem?.views7d||0,
+      viewsLastWeek:editItem?.viewsLastWeek??(preview?.views||parseInt(form.manualViews)||0),
+      lastUpdated:new Date().toISOString(),
+      platform:"YouTube",
+    };
+    try{
+      if(isEditMode){
+        const updated={...itemData,id:editItem.id};
+        await sb("yt_contents","PATCH",ytToDB(updated),`?id=eq.${editItem.id}`);
+        onUpdate(updated);
+      }else{
+        const newItem={...itemData,id:Date.now()};
+        await sb("yt_contents","POST",ytToDB(newItem));
+        onAdd(newItem);
+      }
+      setSaving(false);onClose();
+    }catch(e){setFetchErr("저장 실패: "+e.message);setSaving(false);}
+  };
+
+  return(
+    <div style={C.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:"#fff",borderRadius:18,width:"92%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.18)"}}>
+        <div style={{padding:"22px 28px 18px",borderBottom:"2px solid #FFE0E0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{isEditMode?"유튜브 영상 수정":"유튜브 영상 등록"}</h2>
+            <p style={{margin:"4px 0 0",fontSize:13,color:"#FF0000"}}>📺 유튜브 채널 전용 콘텐츠</p>
+          </div>
+          <button style={{background:"none",border:"none",fontSize:22,color:"#9CA3AF",cursor:"pointer"}} onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:"24px 28px"}}>
+          <label style={C.lbl}>YouTube URL *</label>
+          <input style={C.inp} value={form.url} onChange={e=>set("url",e.target.value)} onBlur={handleUrlBlur} placeholder="https://youtube.com/watch?v=..."/>
+          {loading&&<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#FFF8F8",borderRadius:8,marginBottom:12,fontSize:13,color:"#6B7280"}}><Spinner size={13}/>YouTube 데이터 가져오는 중...</div>}
+          {fetchErr&&<div style={{padding:"10px 14px",background:"#FEE2E2",borderRadius:8,marginBottom:12,fontSize:13,color:"#991B1B"}}>⚠️ {fetchErr}</div>}
+          {preview&&(
+            <div style={{padding:14,background:"#FFF8F8",border:"1px solid #FFE0E0",borderRadius:10,marginBottom:16}}>
+              <div style={{fontSize:11,color:"#16A34A",fontWeight:700,marginBottom:8}}>✅ YouTube 데이터 자동 가져옴</div>
+              {preview.thumbnail&&<img src={preview.thumbnail} alt="" style={{width:"100%",borderRadius:6,marginBottom:8}}/>}
+              <div style={{fontSize:12,fontWeight:600,marginBottom:8}}>{preview.title}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                {[{label:"조회수",value:fmtFull(preview.views)},{label:"좋아요",value:fmtFull(preview.likes)},{label:"댓글",value:fmtFull(preview.comments)}].map(s=>(
+                  <div key={s.label} style={{background:"#FFE0E0",borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:10,color:"#6B7280"}}>{s.label}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:"#FF0000"}}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <label style={C.lbl}>캠페인 *</label>
+          <div style={{display:"flex",gap:10,marginBottom:12}}>
+            {["큐레이터알","단독 쇼츠"].map(c=>(
+              <button key={c} onClick={()=>set("campaign",c)} style={{flex:1,padding:"10px 0",borderRadius:8,border:`2px solid ${form.campaign===c?"#FF0000":"#E5E7EB"}`,background:form.campaign===c?"#FFF0F0":"#fff",color:form.campaign===c?"#FF0000":"#374151",fontWeight:form.campaign===c?700:400,cursor:"pointer",fontSize:14}}>
+                {c}
+              </button>
+            ))}
+          </div>
+          <label style={C.lbl}>콘텐츠명</label>
+          <input style={C.inp} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="(YouTube URL 입력 시 자동 입력)"/>
+          <label style={C.lbl}>업로드일</label>
+          <input style={C.inp} type="date" value={form.uploadDate} onChange={e=>set("uploadDate",e.target.value)}/>
+          {!ytApiKey&&(
+            <div style={{padding:"10px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,marginBottom:12,fontSize:12,color:"#92400E"}}>
+              💡 설정에서 YouTube API 키를 입력하면 데이터가 자동으로 불러와집니다.
+              <br/>지금은 아래에서 조회수를 직접 입력해주세요.
+            </div>
+          )}
+          {!preview&&(
+            <>
+              <label style={C.lbl}>조회수 (수동 입력)</label>
+              <input style={C.inp} type="number" value={form.manualViews} onChange={e=>set("manualViews",e.target.value)} placeholder="0"/>
+            </>
+          )}
+          <label style={C.lbl}>메모</label>
+          <textarea style={{...C.inp,height:70,resize:"vertical"}} value={form.memo} onChange={e=>set("memo",e.target.value)}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"0 28px 24px"}}>
+          <button style={C.btnOutline} onClick={onClose}>취소</button>
+          <button style={{...C.btnRed,background:"#FF0000",opacity:saving?0.6:1,display:"flex",alignItems:"center",gap:8}} onClick={handleSave} disabled={saving}>
+            {saving&&<Spinner size={14}/>}{saving?"저장 중...":isEditMode?"수정 저장":"등록하기"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// 유튜브 채널 전용 대시보드
+// ════════════════════════════════════════════════════════
+function YoutubeDashboard({ytContents,onOpenRegister}) {
+  const total=ytContents.length;
+  const totalViews=ytContents.reduce((s,c)=>s+(c.views||0),0);
+  const week=ytContents.reduce((s,c)=>s+(c.views7d||0),0);
+
+  const byCampaign=useMemo(()=>{
+    const m={};
+    ytContents.forEach(c=>{
+      const k=c.campaign||"미분류";
+      if(!m[k])m[k]={name:k,count:0,totalViews:0,growth:0,top:null};
+      m[k].count++;
+      m[k].totalViews+=c.views||0;
+      m[k].growth+=c.views7d||0;
+      if(!m[k].top||(c.views||0)>(m[k].top.views||0))m[k].top=c;
+    });
+    return Object.values(m).sort((a,b)=>b.totalViews-a.totalViews);
+  },[ytContents]);
+
+  const top10=[...ytContents].sort((a,b)=>(b.views||0)-(a.views||0)).slice(0,10);
+  const topGrowth=[...ytContents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(c=>c.views7d>0).slice(0,10);
+
+  if(total===0)return(
+    <div>
+      <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>📺 유튜브 채널 대시보드</h1>
+      <p style={{margin:"0 0 28px",fontSize:13,color:"#6B7280"}}>큐레이터알 · 단독 쇼츠 채널 관리</p>
+      <div style={{...C.card,textAlign:"center",padding:"80px 24px"}}>
+        <div style={{fontSize:60,marginBottom:18}}>📺</div>
+        <div style={{fontSize:20,fontWeight:700,marginBottom:10}}>등록된 유튜브 영상이 없습니다</div>
+        <button style={{...C.btnRed,background:"#FF0000"}} onClick={onOpenRegister}>+ 첫 영상 등록하기</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div>
+      <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>📺 유튜브 채널 대시보드</h1>
+      <p style={{margin:"0 0 22px",fontSize:13,color:"#6B7280"}}>큐레이터알 · 단독 쇼츠 채널 성과 · {total}개 영상</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
+        {[
+          {label:"전체 영상 수",value:total,icon:"🎬"},
+          {label:"누적 조회수",value:fmtFull(totalViews),icon:"👁"},
+          {label:"큐레이터알",value:ytContents.filter(c=>c.campaign==="큐레이터알").length+"개",icon:"📡"},
+          {label:"단독 쇼츠",value:ytContents.filter(c=>c.campaign==="단독 쇼츠").length+"개",icon:"⚡"},
+        ].map(s=>(
+          <div key={s.label} style={{...C.card,padding:"16px 18px",borderTop:"3px solid #FF0000"}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#6B7280",fontWeight:600}}>{s.label}</span><span style={{fontSize:15}}>{s.icon}</span></div>
+            <div style={{fontSize:26,fontWeight:800,color:"#111827",marginTop:6}}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:24}}>
+        {byCampaign.map(c=>(
+          <div key={c.name} style={{...C.card,borderTop:"3px solid #FF0000"}}>
+            <div style={{fontSize:15,fontWeight:800,marginBottom:12}}>{c.name==="큐레이터알"?"📡":"⚡"} {c.name}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+              {[{label:"영상 수",value:c.count},{label:"총 조회수",value:fmtFull(c.totalViews)},{label:"7일 증가",value:c.growth>0?"+"+fmt(c.growth):"—"}].map(s=>(
+                <div key={s.label} style={{border:"1px solid #FFE0E0",borderRadius:8,padding:"8px 10px"}}>
+                  <div style={{fontSize:11,color:"#6B7280",marginBottom:2}}>{s.label}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:s.label==="7일 증가"&&c.growth>0?"#16A34A":"#111827"}}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+            {c.top&&(
+              <div style={{display:"flex",gap:10,padding:"10px 12px",background:"#FFF8F8",borderRadius:8,border:"1px solid #FFE0E0"}}>
+                <Thumb src={c.top.thumbnail}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,color:"#FF0000",fontWeight:700,marginBottom:2}}>최고 조회수</div>
+                  <div style={{fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.top.title||c.top.url}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#111827"}}>{fmtFull(c.top.views)} 회</div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        {[
+          {title:"누적 조회수 Top 10",items:top10,vk:"views",label:v=>fmtFull(v.views)+" 회"},
+          {title:"🔥 7일 급상승 Top 10",items:topGrowth,vk:"views7d",label:v=>"+"+fmt(v.views7d)},
+        ].map(({title,items,label})=>(
+          <div key={title} style={C.card}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:14,borderLeft:"3px solid #FF0000",paddingLeft:10}}>{title}</div>
+            {items.length===0?<p style={{color:"#9CA3AF",fontSize:13}}>데이터가 없습니다</p>
+            :items.map((item,i)=>(
+              <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <span style={{width:18,fontSize:13,fontWeight:700,color:i<3?"#FF0000":"#9CA3AF"}}>{i+1}</span>
+                <Thumb src={item.thumbnail}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,fontWeight:700,color:item.campaign==="큐레이터알"?"#FF0000":"#F59E0B",marginBottom:1}}>{item.campaign}</div>
+                  <p style={{margin:"0 0 1px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title||item.url}</p>
+                  <a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF"}}>보기 ↗</a>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:"#111827",flexShrink:0}}>{label(item)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// 유튜브 채널 전용 콘텐츠 목록
+// ════════════════════════════════════════════════════════
+function YtContentsList({ytContents,onOpenRegister,onEdit,onDelete,onUpdateAll,updating,updateProgress}) {
+  const [search,setSearch]=useState("");
+  const [campFilter,setCampFilter]=useState("전체");
+  const [sortBy,setSortBy]=useState("최근 등록순");
+
+  const filtered=useMemo(()=>{
+    let r=[...ytContents];
+    if(search)r=r.filter(c=>(c.title||c.url||"").toLowerCase().includes(search.toLowerCase()));
+    if(campFilter!=="전체")r=r.filter(c=>c.campaign===campFilter);
+    if(sortBy==="최근 등록순")r.sort((a,b)=>b.id-a.id);
+    if(sortBy==="조회수 높은순")r.sort((a,b)=>(b.views||0)-(a.views||0));
+    if(sortBy==="7일 증가순")r.sort((a,b)=>(b.views7d||0)-(a.views7d||0));
+    return r;
+  },[ytContents,search,campFilter,sortBy]);
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>📺 유튜브 콘텐츠</h1>
+          <p style={{margin:0,fontSize:13,color:"#6B7280"}}>{filtered.length}건 표시 중</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {updating&&<span style={{fontSize:12,color:"#FF0000",fontWeight:600}}>{updateProgress.done}/{updateProgress.total} 처리 중...</span>}
+          <button style={{...C.btnOutline,display:"flex",alignItems:"center",gap:6,opacity:updating?0.6:1}} onClick={onUpdateAll} disabled={updating}>
+            {updating?<Spinner size={13}/>:"↻"} 지표 업데이트
+          </button>
+          <button style={{...C.btnRed,background:"#FF0000"}} onClick={onOpenRegister}>+ 영상 등록</button>
+        </div>
+      </div>
+      <div style={{...C.card,marginBottom:20,padding:16}}>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <input style={{...C.inp,marginBottom:0,flex:1}} placeholder="영상 검색..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          {["전체","큐레이터알","단독 쇼츠"].map(c=>(
+            <button key={c} onClick={()=>setCampFilter(c)} style={{padding:"9px 16px",border:`1px solid ${campFilter===c?"#FF0000":"#E5E7EB"}`,borderRadius:8,background:campFilter===c?"#FFF0F0":"#fff",color:campFilter===c?"#FF0000":"#374151",fontSize:13,fontWeight:campFilter===c?700:400,cursor:"pointer",whiteSpace:"nowrap"}}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+      {filtered.length===0?(
+        <div style={{...C.card,textAlign:"center",padding:"60px 24px"}}>
+          <div style={{fontSize:40,marginBottom:12}}>📺</div>
+          <div style={{fontSize:16,fontWeight:700,marginBottom:10}}>등록된 영상이 없습니다</div>
+          <button style={{...C.btnRed,background:"#FF0000"}} onClick={onOpenRegister}>+ 영상 등록하기</button>
+        </div>
+      ):(
+        <div style={C.card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:14,fontWeight:700}}>영상 목록 ({filtered.length}건)</div>
+            <select style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+              <option>최근 등록순</option><option>조회수 높은순</option><option>7일 증가순</option>
+            </select>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr style={{borderBottom:"2px solid #FFE0E0",background:"#FFF8F8"}}>
+                  {["영상","캠페인","조회수","7일 증가","업로드일","액션"].map(h=>(
+                    <th key={h} style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:"#FF0000",textAlign:h==="영상"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((item,idx)=>(
+                  <tr key={item.id} style={{borderBottom:"1px solid #FFF0F0",background:idx%2?"#FFFAFA":"#fff"}}>
+                    <td style={{padding:12,verticalAlign:"middle"}}>
+                      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <Thumb src={item.thumbnail}/>
+                        <div style={{minWidth:0}}>
+                          <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{item.title||"(제목 없음)"}</p>
+                          <a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
+                      <span style={{padding:"3px 10px",borderRadius:20,background:item.campaign==="큐레이터알"?"#FEE2E2":"#FEF3C7",color:item.campaign==="큐레이터알"?"#FF0000":"#F59E0B",fontSize:12,fontWeight:700}}>{item.campaign}</span>
+                    </td>
+                    <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
+                      <div style={{fontWeight:700,fontSize:13}}>{fmtFull(item.views)}</div>
+                      <div style={{color:"#9CA3AF",fontSize:11}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>
+                    </td>
+                    <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:13,fontWeight:700,color:item.views7d>0?"#16A34A":"#9CA3AF"}}>
+                      {item.views7d>0?"+"+fmt(item.views7d):"—"}
+                    </td>
+                    <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
+                    <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
+                      <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                        <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid #FFE0E0",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#FF0000",textDecoration:"none",fontWeight:600}}>↗</a>
+                        <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer"}}>✏️</button>
+                        <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer"}}>🗑</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Campaigns({contents}) {
   const campaigns=useMemo(()=>{
     const m={};
@@ -1125,10 +1566,13 @@ export default function App() {
   const [page,setPage]=useState("dashboard");
   const [showRegister,setShowRegister]=useState(false);
   const [editItem,setEditItem]=useState(null);
+  const [showYtRegister,setShowYtRegister]=useState(false);
+  const [ytEditItem,setYtEditItem]=useState(null);
   const [contents,setContents]=useState([]);
   const [settings,setSettings]=useState({ytApiKey:"",apifyToken:""});
   const [viewHistory,setViewHistory]=useState([]);
   const [monthlyGoals,setMonthlyGoals]=useState({});
+  const [ytContents,setYtContents]=useState([]);
   const [updating,setUpdating]=useState(false);
   const [updateProgress,setUpdateProgress]=useState({done:0,total:0});
 
@@ -1213,12 +1657,13 @@ export default function App() {
 
   const loadAll=async()=>{
     try{
-      const [contentRows, userRows, settingsRows, historyRows, goalRows] = await Promise.all([
+      const [contentRows, userRows, settingsRows, historyRows, goalRows, ytRows] = await Promise.all([
         sb("contents","GET",null,"?order=id.desc"),
         sb("users","GET"),
         sb("app_settings","GET",null,"?id=eq.1"),
         sb("view_history","GET",null,"?order=recorded_at.desc&limit=2000"),
         sb("monthly_goals","GET"),
+        sb("yt_contents","GET",null,"?order=id.desc"),
       ]);
       const loadedContents = (contentRows||[]).map(contentFromDB);
       const loadedSettings = { ytApiKey: settingsRows?.[0]?.yt_api_key||"", apifyToken: settingsRows?.[0]?.apify_token||"" };
@@ -1230,6 +1675,7 @@ export default function App() {
       setSettings(loadedSettings);
       setViewHistory(loadedHistory);
       setMonthlyGoals(loadedGoals);
+      setYtContents((ytRows||[]).map(ytFromDB));
       return { contents: loadedContents, settings: loadedSettings };
     }catch(e){
       setInitError(e.message);
@@ -1259,6 +1705,8 @@ export default function App() {
     {key:"dashboard",label:"대시보드"},
     {key:"contents",label:"콘텐츠"},
     {key:"campaigns",label:"캠페인"},
+    {key:"yt_dashboard",label:"📺 유튜브 대시보드"},
+    {key:"yt_contents",label:"📺 유튜브 콘텐츠"},
     ...(isAdmin?[{key:"members",label:"👥 회원 관리"},{key:"settings",label:"⚙️ 설정"}]:[]),
   ];
 
@@ -1296,6 +1744,43 @@ export default function App() {
     }
   };
 
+  const handleDeleteYt = async (item) => {
+    if (!window.confirm(`"${item.title||item.url}"\n정말 삭제하시겠습니까?`)) return;
+    try {
+      await sb("yt_contents","DELETE",null,`?id=eq.${item.id}`);
+      setYtContents(prev => prev.filter(c => c.id !== item.id));
+    } catch(e) {
+      alert("삭제 실패: " + e.message);
+    }
+  };
+
+  const handleUpdateYt = async () => {
+    if (!settings.ytApiKey) { alert("설정 페이지에서 YouTube API 키를 먼저 등록해주세요."); return; }
+    if (ytContents.length===0) { alert("등록된 유튜브 영상이 없습니다."); return; }
+    setUpdating(true);
+    setUpdateProgress({done:0,total:ytContents.length});
+    const nowISO=new Date().toISOString();
+    const updatedList=[...ytContents];
+    for(let i=0;i<ytContents.length;i++){
+      const item=ytContents[i];
+      try{
+        const fresh=await fetchYouTubeStats(item.url,settings.ytApiKey);
+        if(fresh&&fresh.views!=null){
+          const baseline=item.viewsLastWeek??item.views??0;
+          const growth=Math.max(0,fresh.views-baseline);
+          const updated={...item,views:fresh.views,likes:fresh.likes??item.likes,comments:fresh.comments??item.comments,thumbnail:fresh.thumbnail||item.thumbnail,views7d:growth,viewsLastWeek:fresh.views,lastUpdated:nowISO};
+          await sb("yt_contents","PATCH",ytToDB(updated),`?id=eq.${item.id}`);
+          const idx=updatedList.findIndex(c=>c.id===item.id);
+          if(idx>=0)updatedList[idx]=updated;
+        }
+      }catch(e){console.warn(`YT 업데이트 실패:`,e.message);}
+      setUpdateProgress({done:i+1,total:ytContents.length});
+      await new Promise(r=>setTimeout(r,300));
+    }
+    setYtContents(updatedList);
+    setUpdating(false);
+    alert(`유튜브 영상 ${ytContents.length}개 업데이트 완료!`);
+  };
 
   return(
     <div style={{minHeight:"100vh",background:"#FDF8F8",fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
@@ -1354,12 +1839,16 @@ export default function App() {
         {page==="dashboard"&&<Dashboard contents={contents} viewHistory={viewHistory} monthlyGoals={monthlyGoals} onOpenRegister={()=>setShowRegister(true)}/>}
         {page==="contents"&&<ContentsList contents={contents} onOpenRegister={()=>setShowRegister(true)} onEdit={item=>setEditItem(item)} onDelete={handleDeleteContent} onUpdateAll={handleUpdateAll} updating={updating} updateProgress={updateProgress}/>}
         {page==="campaigns"&&<Campaigns contents={contents}/>}
+        {page==="yt_dashboard"&&<YoutubeDashboard ytContents={ytContents} onOpenRegister={()=>setShowYtRegister(true)}/>}
+        {page==="yt_contents"&&<YtContentsList ytContents={ytContents} onOpenRegister={()=>setShowYtRegister(true)} onEdit={item=>setYtEditItem(item)} onDelete={handleDeleteYt} onUpdateAll={handleUpdateYt} updating={updating} updateProgress={updateProgress}/>}
         {page==="members"&&<MemberAdmin users={users} refreshUsers={loadAll} currentUser={currentUser}/>}
         {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser} monthlyGoals={monthlyGoals} refreshGoals={loadAll}/>}
       </main>
 
-      {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
-      {editItem&&<RegisterModal editItem={editItem} onUpdate={updated=>setContents(prev=>prev.map(c=>c.id===updated.id?updated:c))} onClose={()=>setEditItem(null)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken}/>}
+      {showRegister&&<RegisterModal onAdd={item=>setContents(p=>[item,...p])} onClose={()=>setShowRegister(false)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken} allContents={contents}/>}
+      {editItem&&<RegisterModal editItem={editItem} onUpdate={updated=>setContents(prev=>prev.map(c=>c.id===updated.id?updated:c))} onClose={()=>setEditItem(null)} ytApiKey={settings.ytApiKey} apifyToken={settings.apifyToken} allContents={contents}/>}
+      {showYtRegister&&<YtRegisterModal onAdd={item=>setYtContents(p=>[item,...p])} onClose={()=>setShowYtRegister(false)} ytApiKey={settings.ytApiKey}/>}
+      {ytEditItem&&<YtRegisterModal editItem={ytEditItem} onUpdate={updated=>setYtContents(prev=>prev.map(c=>c.id===updated.id?updated:c))} onClose={()=>setYtEditItem(null)} ytApiKey={settings.ytApiKey}/>}
     </div>
   );
 }
