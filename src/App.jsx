@@ -739,8 +739,34 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
 
-  // 월별 집계 — 실제 증가분 (view_history recorded_at 기준)
+  // 이번 주 월요일 기준
   const now = new Date();
+  const todayMidnight = new Date(now); todayMidnight.setHours(0,0,0,0);
+  const dayOfWeekNow = (todayMidnight.getDay()+6)%7;
+  const thisMonday = new Date(todayMidnight); thisMonday.setDate(todayMidnight.getDate()-dayOfWeekNow);
+
+  // 이번 주 신규 등록 콘텐츠 조회수 합계
+  const newContentsThisWeek = contents.filter(c => {
+    if(!c.uploadDate) return false;
+    const d = new Date(c.uploadDate);
+    return d >= thisMonday;
+  });
+  const newContentsViews = newContentsThisWeek.reduce((s,c)=>s+effectiveViews(c),0);
+
+  // 기존 콘텐츠 이번 주 증가분 (view_history 기준)
+  const nextMonday = new Date(thisMonday); nextMonday.setDate(thisMonday.getDate()+7);
+  const existingGrowthThisWeek = viewHistory
+    .filter(h=>{
+      const d=new Date(h.recordedAt);
+      return d>=thisMonday && d<nextMonday;
+    })
+    .filter(h=>{
+      // 신규 등록 콘텐츠 제외 (이번 주 uploadDate인 콘텐츠)
+      const content = contents.find(c=>c.id===h.contentId);
+      if(!content||!content.uploadDate) return true;
+      return new Date(content.uploadDate) < thisMonday;
+    })
+    .reduce((s,h)=>s+(h.growth||0),0);
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
   const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,"0")}`;
@@ -829,8 +855,8 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
       {/* 24h / 7일 증가 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:24}}>
         {[
-          {label:"전주 대비 증가분",value:week>0?"+"+fmt(week):"—",icon:"📈"},
-          {label:"7일간 증가분",value:week>0?"+"+fmt(week):"—",icon:"🔄"},
+          {label:"이번 주 신규 콘텐츠",value:newContentsViews>0?fmt(newContentsViews):"—",icon:"🆕",sub:`${newContentsThisWeek.length}건 등록`},
+          {label:"이번 주 기존 콘텐츠 증가",value:existingGrowthThisWeek>0?"+"+fmt(existingGrowthThisWeek):"—",icon:"📈",green:true},
         ].map(s=>(
           <div key={s.label} style={{...C.card,padding:"16px 18px",borderTop:"3px solid "+RED}}>
             <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#6B7280",fontWeight:600}}>{s.label}</span><span style={{fontSize:15}}>{s.icon}</span></div>
