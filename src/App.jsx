@@ -885,27 +885,67 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
         ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        {[
-          {title:"전주 대비 급상승 Top 10",items:top24h,vk:"views24h"},
-          {title:"최근 7일 급상승 Top 10",items:top7d,vk:"views7d"},
-        ].map(({title,items,vk})=>(
-          <div key={title} style={C.card}>
-            <div style={{fontSize:14,fontWeight:700,marginBottom:14,borderLeft:"3px solid "+RED,paddingLeft:10}}>{title}</div>
-            {items.length===0?<p style={{color:"#9CA3AF",fontSize:13}}>집계 데이터가 없습니다</p>
-            :items.map((item,i)=>(
-              <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                <span style={{width:18,fontSize:13,fontWeight:700,color:i<3?RED:"#9CA3AF"}}>{i+1}</span>
-                <Thumb src={item.thumbnail}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <PlatformBadge p={item.platform}/>
-                  <p style={{margin:"3px 0 2px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.title||item.url}</p>
-                  <StatusBadge s={item.status}/>
+        {/* 누적 조회수 Top 10 (순위 변동 포함) */}
+        <div style={C.card}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14,borderLeft:"3px solid "+RED,paddingLeft:10}}>누적 조회수 Top 10</div>
+          {(()=>{
+            const topAll=[...contents].sort((a,b)=>effectiveViews(b)-effectiveViews(a)).slice(0,10);
+            // localStorage에서 지난주 순위 불러오기
+            let lastRanks={};
+            try{ lastRanks=JSON.parse(localStorage.getItem("sns_last_ranks")||"{}"); }catch(e){}
+            // 매주 월요일에 순위 갱신
+            const lastSaved=localStorage.getItem("sns_ranks_saved_at");
+            const shouldSave=!lastSaved||new Date(lastSaved)<thisMonday;
+            if(shouldSave&&topAll.length>0){
+              const newRanks={};
+              topAll.forEach((item,i)=>{ newRanks[item.id]=i+1; });
+              try{
+                localStorage.setItem("sns_last_ranks",JSON.stringify(newRanks));
+                localStorage.setItem("sns_ranks_saved_at",thisMonday.toISOString());
+              }catch(e){}
+            }
+            if(topAll.length===0) return <p style={{color:"#9CA3AF",fontSize:13}}>데이터가 없습니다</p>;
+            return topAll.map((item,i)=>{
+              const lastRank=lastRanks[item.id];
+              const rankChange=lastRank?(lastRank-(i+1)):null;
+              return(
+                <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  <div style={{width:28,flexShrink:0,textAlign:"center"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:i<3?RED:"#9CA3AF"}}>{i+1}</div>
+                    {rankChange!==null&&(
+                      <div style={{fontSize:10,fontWeight:700,color:rankChange>0?"#16A34A":rankChange<0?RED:"#9CA3AF"}}>
+                        {rankChange>0?`▲${rankChange}`:rankChange<0?`▼${Math.abs(rankChange)}`:"—"}
+                      </div>
+                    )}
+                  </div>
+                  <Thumb src={item.thumbnail}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <PlatformBadge p={item.platform}/>
+                    <p style={{margin:"3px 0 2px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.title||item.url}</p>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:"#111827",flexShrink:0}}>{fmt(effectiveViews(item))}</span>
                 </div>
-                <span style={{fontSize:13,fontWeight:700,color:"#16A34A",flexShrink:0}}>+{fmt(item[vk])}</span>
+              );
+            });
+          })()}
+        </div>
+        {/* 최근 7일 급상승 Top 10 */}
+        <div style={C.card}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14,borderLeft:"3px solid "+RED,paddingLeft:10}}>최근 7일 급상승 Top 10</div>
+          {top7d.length===0?<p style={{color:"#9CA3AF",fontSize:13}}>집계 데이터가 없습니다</p>
+          :top7d.map((item,i)=>(
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <span style={{width:18,fontSize:13,fontWeight:700,color:i<3?RED:"#9CA3AF"}}>{i+1}</span>
+              <Thumb src={item.thumbnail}/>
+              <div style={{flex:1,minWidth:0}}>
+                <PlatformBadge p={item.platform}/>
+                <p style={{margin:"3px 0 2px",fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.title||item.url}</p>
+                <StatusBadge s={item.status}/>
               </div>
-            ))}
-          </div>
-        ))}
+              <span style={{fontSize:13,fontWeight:700,color:"#16A34A",flexShrink:0}}>+{fmt(item.views7d)}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
