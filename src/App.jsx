@@ -536,9 +536,15 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       manager:form.manager,
       uploadDate:form.uploadDate||s?.publishedAt||new Date().toISOString().slice(0,10),
       memo:form.memo,
-      views:isEditMode ? (parseInt(form.manualViews)||0) : (s?.views||parseInt(form.manualViews)||0),
-      likes:isEditMode ? (parseInt(form.manualLikes)||0) : (s?.likes||parseInt(form.manualLikes)||0),
-      comments:isEditMode ? (parseInt(form.manualComments)||0) : (s?.comments||parseInt(form.manualComments)||0),
+      views: isEditMode
+        ? (form.manualViews!==""&&form.manualViews!==null ? parseInt(form.manualViews)||0 : editItem.views||0)
+        : (s?.views||parseInt(form.manualViews)||0),
+      likes: isEditMode
+        ? (form.manualLikes!==""&&form.manualLikes!==null ? parseInt(form.manualLikes)||0 : editItem.likes||0)
+        : (s?.likes||parseInt(form.manualLikes)||0),
+      comments: isEditMode
+        ? (form.manualComments!==""&&form.manualComments!==null ? parseInt(form.manualComments)||0 : editItem.comments||0)
+        : (s?.comments||parseInt(form.manualComments)||0),
       views24h:editItem?.views24h||0,views7d:editItem?.views7d||0,status:"성공",
       lastUpdated:editItem?.lastUpdated||new Date().toISOString(),
       viewsLastWeek:editItem?.viewsLastWeek ?? (s?.views||parseInt(form.manualViews)||0),
@@ -711,7 +717,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
 // ════════════════════════════════════════════════════════
 function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const total=contents.length;
-  const totalViews=contents.reduce((s,c)=>s+(c.views||0),0);
+  const totalViews=contents.reduce((s,c)=>s+effectiveViews(c),0);
   const week=contents.reduce((s,c)=>s+(c.views7d||0),0);
   const topView=[...contents].sort((a,b)=>(b.views||0)-(a.views||0))[0];
   const topGrowth=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0))[0];
@@ -807,7 +813,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
       {/* 24h / 7일 증가 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:24}}>
         {[
-          {label:"최근 업데이트 증가분",value:week>0?"+"+fmt(week):"—",icon:"📈"},
+          {label:"전주 대비 증가분",value:week>0?"+"+fmt(week):"—",icon:"📈"},
           {label:"7일간 증가분",value:week>0?"+"+fmt(week):"—",icon:"🔄"},
         ].map(s=>(
           <div key={s.label} style={{...C.card,padding:"16px 18px",borderTop:"3px solid "+RED}}>
@@ -838,7 +844,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         {[
-          {title:"최근 업데이트 급상승 Top 10",items:top24h,vk:"views24h"},
+          {title:"전주 대비 급상승 Top 10",items:top24h,vk:"views24h"},
           {title:"최근 7일 급상승 Top 10",items:top7d,vk:"views7d"},
         ].map(({title,items,vk})=>(
           <div key={title} style={C.card}>
@@ -1094,7 +1100,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                         {!item.isGroup&&<div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>}
                       </td>
                       <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                        <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>최근 {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
+                        <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>전주 대비 {item.views24h!==0?((item.views24h>0?"+":"")+fmt(Math.abs(item.views24h))):"—"}</div>
                         <div style={{color:item.views7d>0?"#16A34A":"#9CA3AF"}}>7일 {item.views7d>0?"+"+fmt(item.views7d):"—"}</div>
                       </td>
                       <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
@@ -1716,6 +1722,9 @@ export default function App() {
         if (fresh && fresh.views!=null) {
           const baseline = item.viewsLastWeek ?? item.views ?? 0;
           const weeklyGrowth = Math.max(0, fresh.views - baseline);
+          // 전주 대비 증가분: 이번 주 증가 - 지난 주 증가
+          const prevWeeklyGrowth = item.views7d || 0;
+          const weekOverWeek = weeklyGrowth - prevWeeklyGrowth;
           // 썸네일 Storage 업로드 (아직 임시 URL인 경우만)
           const newThumb = fresh.thumbnail || item.thumbnail;
           const thumbnail = await uploadThumbnail(newThumb, item.id);
@@ -1726,10 +1735,10 @@ export default function App() {
             comments: fresh.comments ?? item.comments,
             thumbnail,
             views7d: weeklyGrowth,
-            views24h: weeklyGrowth,
+            views24h: weekOverWeek, // 전주 대비 증가분
             viewsLastWeek: fresh.views,
             lastUpdated: nowISO,
-            viewsOffset: item.viewsOffset||0, // 보정값은 유지
+            viewsOffset: item.viewsOffset||0,
           };
           await sb("contents","PATCH",contentToDB(updated),`?id=eq.${item.id}`);
           // 월별/주별 집계를 위한 이력 기록 (증가분이 있을 때만)
