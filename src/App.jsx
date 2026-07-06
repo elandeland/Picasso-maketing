@@ -724,19 +724,19 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
 
-  // ── 월별 집계 (이력 기준: 해당 월에 "올라간" 증가분 합산)
+  // 월별 집계 — 업로드일 기준 effectiveViews 합산 (누적 조회수와 일치)
   const now = new Date();
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
   const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,"0")}`;
 
-  const sumGrowthForMonth = (monthKey) => {
-    return viewHistory
-      .filter(h => h.recordedAt && h.recordedAt.slice(0,7)===monthKey)
-      .reduce((s,h)=>s+(h.growth||0),0);
-  };
-  const thisMonthViews = sumGrowthForMonth(thisMonthKey);
-  const lastMonthViews = sumGrowthForMonth(lastMonthKey);
+  const sumViewsForMonth = (monthKey) =>
+    contents
+      .filter(c => (c.uploadDate||"").slice(0,7) === monthKey)
+      .reduce((s,c) => s + effectiveViews(c), 0);
+
+  const thisMonthViews = sumViewsForMonth(thisMonthKey);
+  const lastMonthViews = sumViewsForMonth(lastMonthKey);
   const monthGoal = monthlyGoals[thisMonthKey] || 0;
   const achieveRate = monthGoal>0 ? Math.round(thisMonthViews/monthGoal*100) : null;
   const momGrowthRate = lastMonthViews>0 ? Math.round((thisMonthViews-lastMonthViews)/lastMonthViews*100) : null;
@@ -956,7 +956,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
     // 그룹 대표 제목 = 조회수 가장 높은 항목의 제목
     const groupRows=Object.values(groupMap).map(g=>{
       const topItem=[...g.items].sort((a,b)=>(effectiveViews(b))-(effectiveViews(a)))[0];
-      return {...g, title:topItem?.title||g.groupName, thumbnail:topItem?.thumbnail||g.thumbnails[0]||"", url:topItem?.url||""};
+      return {...g, title:topItem?.title||g.groupName, thumbnail:topItem?.thumbnail||g.thumbnails[0]||"", url:topItem?.url||"", channel:topItem?.channel||""};
     });
 
     let result=[...groupRows,...ungrouped];
@@ -1090,7 +1090,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                           : <PlatformBadge p={item.platform}/>}
                       </td>
                       <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>
-                        {item.isGroup?<span style={{color:"#9CA3AF"}}>—</span>:(item.channel||"—")}
+                        {item.isGroup?(item.channel||"—"):(item.channel||"—")}
                       </td>
                       <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
                       <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,fontWeight:600}}>{item.campaign||"—"}</td>
@@ -1734,8 +1734,9 @@ export default function App() {
             likes: fresh.likes ?? item.likes,
             comments: fresh.comments ?? item.comments,
             thumbnail,
+            channel: fresh.channel || item.channel || "", // 채널명도 갱신
             views7d: weeklyGrowth,
-            views24h: weekOverWeek, // 전주 대비 증가분
+            views24h: weekOverWeek,
             viewsLastWeek: fresh.views,
             lastUpdated: nowISO,
             viewsOffset: item.viewsOffset||0,
