@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 
 // ════════════════════════════════════════════════════════
 // Supabase 설정 — 본인 프로젝트 값으로 교체하세요
@@ -1060,7 +1060,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
               {filtered.map((item,idx)=>{
                 const isExpanded = expandedGroups[item.groupName];
                 return (
-                  <React.Fragment key={item.id}>
+                  <Fragment key={item.id}>
                     <tr style={{borderBottom:"1px solid #FCF0F1",background:item.isGroup?RED_LIGHT:idx%2?"#FFFAFA":"#fff"}}>
                       <td style={{padding:12,verticalAlign:"middle"}}>
                         <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -1145,7 +1145,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
                         </td>
                       </tr>
                     ))}
-                  </React.Fragment>
+                  </Fragment>
                 );
               })}
             </tbody>
