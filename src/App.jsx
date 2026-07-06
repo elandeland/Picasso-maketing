@@ -575,6 +575,18 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       }else{
         const newItem={...itemData,id:contentId};
         await sb("contents","POST",contentToDB(newItem));
+        // 신규 등록 시 현재 조회수를 해당 월 집계에 반영
+        if(newItem.views>0){
+          try{
+            await sb("view_history","POST",{
+              id: Date.now()+Math.floor(Math.random()*1000),
+              content_id: newItem.id,
+              views_at_update: newItem.views,
+              growth: newItem.views,
+              recorded_at: new Date().toISOString(),
+            });
+          }catch(histErr){ console.warn("초기 이력 기록 실패:", histErr.message); }
+        }
         onAdd(newItem);
       }
       setSaving(false);onClose();
