@@ -575,18 +575,6 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       }else{
         const newItem={...itemData,id:contentId};
         await sb("contents","POST",contentToDB(newItem));
-        // 등록 시점의 조회수를 "첫 증가분"으로 이력에 기록 (월별/주별 집계에 즉시 반영되도록)
-        if(newItem.views>0){
-          try{
-            await sb("view_history","POST",{
-              id: Date.now()+Math.floor(Math.random()*1000),
-              content_id: newItem.id,
-              views_at_update: newItem.views,
-              growth: newItem.views,
-              recorded_at: newItem.uploadDate ? new Date(newItem.uploadDate).toISOString() : new Date().toISOString(),
-            });
-          }catch(histErr){ console.warn("초기 이력 기록 실패:", histErr.message); }
-        }
         onAdd(newItem);
       }
       setSaving(false);onClose();
@@ -739,7 +727,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
 
-  // 월별 집계 — 실제 증가분만 (초기 등록값 제외)
+  // 월별 집계 — 실제 증가분 (view_history recorded_at 기준)
   const now = new Date();
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
@@ -747,11 +735,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
 
   const sumGrowthForMonth = (monthKey) => {
     return viewHistory
-      .filter(h =>
-        h.recordedAt &&
-        h.recordedAt.slice(0,7) === monthKey &&
-        h.growth !== h.viewsAtUpdate  // 초기 등록값 제외
-      )
+      .filter(h => h.recordedAt && h.recordedAt.slice(0,7) === monthKey)
       .reduce((s,h) => s + (h.growth||0), 0);
   };
 
