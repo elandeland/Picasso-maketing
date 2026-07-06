@@ -851,6 +851,9 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
   const [pfFilter,setPfFilter]=useState("전체");
   const [stFilter,setStFilter]=useState("전체");
   const [sortBy,setSortBy]=useState("최근 등록순");
+  const [expandedGroups,setExpandedGroups]=useState({});
+
+  const toggleGroup=(key)=>setExpandedGroups(p=>({...p,[key]:!p[key]}));
 
   const filtered=useMemo(()=>{
     let r=[...contents];
@@ -1000,58 +1003,97 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item,idx)=>(
-                <tr key={item.id} style={{borderBottom:"1px solid #FCF0F1",background:item.isGroup?RED_LIGHT:idx%2?"#FFFAFA":"#fff"}}>
-                  <td style={{padding:12,verticalAlign:"middle"}}>
-                    <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                      <Thumb src={item.thumbnail}/>
-                      <div style={{minWidth:0}}>
-                        {item.isGroup&&<span style={{fontSize:10,fontWeight:700,color:RED,background:"#FFE4E8",padding:"1px 6px",borderRadius:10,marginBottom:3,display:"inline-block"}}>그룹 {item.items?.length}개</span>}
-                        <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:320}}>{item.title||item.groupName||"(제목 없음)"}</p>
-                        {!item.isGroup&&<a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>}
-                        {item.isGroup&&<div style={{fontSize:11,color:"#9CA3AF"}}>{item.platforms?.join(" + ")}</div>}
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
-                    {item.isGroup
-                      ? <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center"}}>{item.platforms?.map(p=><PlatformBadge key={p} p={p}/>)}</div>
-                      : <PlatformBadge p={item.platform}/>
-                    }
-                  </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>
-                    {item.isGroup
-                      ? <span style={{color:"#9CA3AF"}}>—</span>
-                      : (item.channel||"—")
-                    }
-                  </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,fontWeight:600}}>{item.campaign||"—"}</td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>{item.manager||"—"}</td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                    <div style={{fontWeight:600}}>조회 {fmtFull(item.effectiveViewsTotal||item.views)}</div>
-                    {item.isGroup
-                      ? <div style={{color:"#9CA3AF",fontSize:11}}>{item.platforms?.includes("Instagram Reel")||item.platforms?.includes("Instagram Post")?"좋아요×100 포함 합산":""}</div>
-                      : <div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>
-                    }
-                  </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
-                    <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>최근 업데이트 {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
-                    <div style={{color:item.views7d>0?"#16A34A":"#9CA3AF"}}>7일 {item.views7d>0?"+"+fmt(item.views7d):"—"}</div>
-                  </td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
-                  <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
-                    {item.isGroup
-                      ? <span style={{fontSize:12,color:"#9CA3AF"}}>{item.items?.length}개 합산</span>
-                      : <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-                          <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 8px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
-                          <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer",fontWeight:600}}>✏️</button>
-                          <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer",fontWeight:600}}>🗑</button>
+              {filtered.map((item,idx)=>{
+                const isExpanded = expandedGroups[item.groupName];
+                return (
+                  <React.Fragment key={item.id}>
+                    <tr style={{borderBottom:"1px solid #FCF0F1",background:item.isGroup?RED_LIGHT:idx%2?"#FFFAFA":"#fff"}}>
+                      <td style={{padding:12,verticalAlign:"middle"}}>
+                        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                          {item.isGroup&&(
+                            <button onClick={()=>toggleGroup(item.groupName)} style={{background:"none",border:"none",cursor:"pointer",padding:"2px 4px",fontSize:13,color:RED,flexShrink:0}}>
+                              {isExpanded?"▲":"▶"}
+                            </button>
+                          )}
+                          <Thumb src={item.thumbnail}/>
+                          <div style={{minWidth:0}}>
+                            {item.isGroup&&<span style={{fontSize:10,fontWeight:700,color:RED,background:"#FFE4E8",padding:"1px 6px",borderRadius:10,marginBottom:3,display:"inline-block"}}>그룹 {item.items?.length}개</span>}
+                            <p style={{margin:0,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>{item.title||item.groupName||"(제목 없음)"}</p>
+                            {!item.isGroup&&<a href={item.url} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#9CA3AF",textDecoration:"none"}}>{item.url?.slice(0,36)}...</a>}
+                            {item.isGroup&&<div style={{fontSize:11,color:"#9CA3AF"}}>{item.platforms?.join(" + ")}</div>}
+                          </div>
                         </div>
-                    }
-                  </td>
-                </tr>
-              ))}
+                      </td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
+                        {item.isGroup
+                          ? <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center"}}>{item.platforms?.map(p=><PlatformBadge key={p} p={p}/>)}</div>
+                          : <PlatformBadge p={item.platform}/>}
+                      </td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>
+                        {item.isGroup?<span style={{color:"#9CA3AF"}}>—</span>:(item.channel||"—")}
+                      </td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={item.status}/></td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,fontWeight:600}}>{item.campaign||"—"}</td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>{item.manager||"—"}</td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
+                        <div style={{fontWeight:600}}>조회 {fmtFull(item.effectiveViewsTotal||item.views)}</div>
+                        {!item.isGroup&&<div style={{color:"#9CA3AF"}}>♥ {fmtFull(item.likes)} · 💬 {fmtFull(item.comments)}</div>}
+                      </td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12}}>
+                        <div style={{color:item.views24h>0?"#16A34A":"#9CA3AF"}}>최근 {item.views24h>0?"+"+fmt(item.views24h):"—"}</div>
+                        <div style={{color:item.views7d>0?"#16A34A":"#9CA3AF"}}>7일 {item.views7d>0?"+"+fmt(item.views7d):"—"}</div>
+                      </td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle",fontSize:12,color:"#9CA3AF"}}>{item.uploadDate||"—"}</td>
+                      <td style={{padding:12,textAlign:"center",verticalAlign:"middle"}}>
+                        {item.isGroup
+                          ? <button onClick={()=>toggleGroup(item.groupName)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid "+RED_BORDER,background:RED_LIGHT,color:RED,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                              {isExpanded?"접기":"펼치기"}
+                            </button>
+                          : <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                              <a href={item.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"4px 8px",fontSize:12,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
+                              <button onClick={()=>onEdit(item)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#374151",background:"#fff",cursor:"pointer",fontWeight:600}}>✏️</button>
+                              <button onClick={()=>onDelete(item)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"4px 8px",fontSize:12,color:"#DC2626",background:"#FEF2F2",cursor:"pointer",fontWeight:600}}>🗑</button>
+                            </div>
+                        }
+                      </td>
+                    </tr>
+                    {item.isGroup && isExpanded && item.items?.map((child)=>(
+                      <tr key={child.id} style={{borderBottom:"1px solid #FCF0F1",background:"#FFFBFB"}}>
+                        <td style={{padding:"10px 12px 10px 56px",verticalAlign:"middle"}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <span style={{fontSize:11,color:"#9CA3AF",flexShrink:0}}>└</span>
+                            <Thumb src={child.thumbnail}/>
+                            <div style={{minWidth:0}}>
+                              <p style={{margin:0,fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:260}}>{child.title||"(제목 없음)"}</p>
+                              <a href={child.url} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#9CA3AF",textDecoration:"none"}}>{child.url?.slice(0,36)}...</a>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle"}}><PlatformBadge p={child.platform}/></td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11,color:"#374151"}}>{child.channel||"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle"}}><StatusBadge s={child.status}/></td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11}}>{child.campaign||"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11}}>{child.manager||"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11}}>
+                          <div style={{fontWeight:600}}>조회 {fmtFull(effectiveViews(child))}</div>
+                          <div style={{color:"#9CA3AF",fontSize:10}}>♥ {fmtFull(child.likes)} · 💬 {fmtFull(child.comments)}</div>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11}}>
+                          <div style={{color:child.views7d>0?"#16A34A":"#9CA3AF"}}>7일 {child.views7d>0?"+"+fmt(child.views7d):"—"}</div>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle",fontSize:11,color:"#9CA3AF"}}>{child.uploadDate||"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",verticalAlign:"middle"}}>
+                          <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                            <a href={child.url} target="_blank" rel="noreferrer" style={{border:"1px solid "+RED_BORDER,borderRadius:6,padding:"3px 7px",fontSize:11,color:RED,textDecoration:"none",fontWeight:600}}>↗</a>
+                            <button onClick={()=>onEdit(child)} style={{border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 7px",fontSize:11,color:"#374151",background:"#fff",cursor:"pointer"}}>✏️</button>
+                            <button onClick={()=>onDelete(child)} style={{border:"1px solid #FCA5A5",borderRadius:6,padding:"3px 7px",fontSize:11,color:"#DC2626",background:"#FEF2F2",cursor:"pointer"}}>🗑</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1832,27 +1874,6 @@ export default function App() {
               </div>
               <span style={{fontSize:10,color:"#9CA3AF",marginLeft:2}}>▼</span>
             </button>
-            {showWorkspaceDrop&&(
-              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:9999,minWidth:180,overflow:"hidden"}}>
-                <div style={{padding:"8px 0"}}>
-                  <div style={{padding:"4px 12px",fontSize:11,color:"#9CA3AF",fontWeight:700}}>워크스페이스 선택</div>
-                  {[
-                    {key:"picasso",label:"피카소 TF",sub:"대시보드 · 콘텐츠 · 캠페인",icon:"📊",color:RED},
-                    {key:"youtube",label:"유튜브 채널",sub:"큐레이터알 · 단독 쇼츠",icon:"📺",color:BLUE},
-                  ].map(w=>(
-                    <button key={w.key} onClick={()=>switchWorkspace(w.key)}
-                      style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"none",background:workspace===w.key?`${w.color}10`:"#fff",cursor:"pointer",textAlign:"left"}}>
-                      <div style={{width:28,height:28,background:w.color,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{w.icon}</div>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:700,color:workspace===w.key?w.color:"#111827"}}>{w.label}</div>
-                        <div style={{fontSize:11,color:"#9CA3AF"}}>{w.sub}</div>
-                      </div>
-                      {workspace===w.key&&<span style={{marginLeft:"auto",color:w.color,fontSize:14}}>✓</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {nav.map(item=>(
@@ -1889,6 +1910,27 @@ export default function App() {
 
       {/* 드롭다운 외부 클릭 시 닫기 */}
       {showWorkspaceDrop&&<div style={{position:"fixed",inset:0,zIndex:9998}} onClick={()=>setShowWorkspaceDrop(false)}/>}
+      {showWorkspaceDrop&&(
+        <div style={{position:"fixed",top:64,left:16,background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",zIndex:9999,minWidth:200,overflow:"hidden"}}>
+          <div style={{padding:"8px 0"}}>
+            <div style={{padding:"4px 12px",fontSize:11,color:"#9CA3AF",fontWeight:700}}>워크스페이스 선택</div>
+            {[
+              {key:"picasso",label:"피카소 TF",sub:"대시보드 · 콘텐츠 · 캠페인",icon:"📊",color:RED},
+              {key:"youtube",label:"유튜브 채널",sub:"큐레이터알 · 단독 쇼츠",icon:"📺",color:BLUE},
+            ].map(w=>(
+              <button key={w.key} onClick={()=>switchWorkspace(w.key)}
+                style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"none",background:workspace===w.key?`${w.color}10`:"#fff",cursor:"pointer",textAlign:"left"}}>
+                <div style={{width:28,height:28,background:w.color,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{w.icon}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:workspace===w.key?w.color:"#111827"}}>{w.label}</div>
+                  <div style={{fontSize:11,color:"#9CA3AF"}}>{w.sub}</div>
+                </div>
+                {workspace===w.key&&<span style={{marginLeft:"auto",color:w.color,fontSize:14}}>✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <main style={{maxWidth:1300,margin:"0 auto",padding:"28px 24px"}}>
         {page==="dashboard"&&<Dashboard contents={contents} viewHistory={viewHistory} monthlyGoals={monthlyGoals} onOpenRegister={()=>setShowRegister(true)}/>}
