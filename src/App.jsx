@@ -32,6 +32,7 @@ const contentFromDB = (r) => ({
   views24h:r.views_24h, views7d:r.views_7d, status:r.status,
   lastUpdated:r.last_updated, viewsLastWeek:r.views_last_week,
   groupName:r.group_name||"", channel:r.channel||"",
+  viewsOffset:r.views_offset||0,
 });
 const contentToDB = (c) => ({
   id:c.id, url:c.url, platform:c.platform, title:c.title, thumbnail:c.thumbnail,
@@ -40,6 +41,7 @@ const contentToDB = (c) => ({
   views_24h:c.views24h, views_7d:c.views7d, status:c.status,
   last_updated:c.lastUpdated, views_last_week:c.viewsLastWeek,
   group_name:c.groupName||"", channel:c.channel||"",
+  views_offset:c.viewsOffset||0,
 });
 const userFromDB = (r) => ({ id:r.id, name:r.name, email:r.email, password:r.password, role:r.role, status:r.status, joinedAt:r.joined_at });
 
@@ -79,6 +81,41 @@ const extractYouTubeId = (url="") => {
 // Edge Function URL (Supabase 프로젝트 URL 기반으로 자동 설정)
 const EDGE_FN_URL = SUPABASE_URL.replace("/rest/v1","") + "/functions/v1/clever-function";
 
+// 썸네일을 Supabase Storage에 영구 저장
+const uploadThumbnail = async (thumbnailUrl, contentId) => {
+  if (!thumbnailUrl) return thumbnailUrl;
+  try {
+    // 이미 Supabase Storage URL이면 그대로 반환
+    if (thumbnailUrl.includes("supabase.co/storage")) return thumbnailUrl;
+    // 외부 이미지 fetch
+    const imgRes = await fetch(thumbnailUrl);
+    if (!imgRes.ok) return thumbnailUrl;
+    const blob = await imgRes.blob();
+    const ext = blob.type.includes("png") ? "png" : "jpg";
+    const filename = `${contentId}.${ext}`;
+    // Supabase Storage에 업로드
+    const uploadRes = await fetch(
+      `${SUPABASE_URL.replace("/rest/v1","")}/storage/v1/object/thumbnails/${filename}`,
+      {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": blob.type,
+          "x-upsert": "true",
+        },
+        body: blob,
+      }
+    );
+    if (!uploadRes.ok) return thumbnailUrl;
+    // 영구 공개 URL 반환
+    return `${SUPABASE_URL.replace("/rest/v1","")}/storage/v1/object/public/thumbnails/${filename}`;
+  } catch(e) {
+    console.warn("썸네일 업로드 실패:", e.message);
+    return thumbnailUrl; // 실패하면 원본 URL 그대로 사용
+  }
+};
+
 const callEdgeFunction = async (platform, url, apiKeys) => {
   const res = await fetch(EDGE_FN_URL, {
     method: "POST",
@@ -115,12 +152,12 @@ const fetchInstagramStats = async (url, apifyToken) => {
 const fmt = (n) => { if(!n)return"0"; if(n>=1000000)return(n/1000000).toFixed(1)+"M"; if(n>=1000)return(n/1000).toFixed(1)+"K"; return n.toLocaleString(); };
 const fmtFull = (n) => (n||0).toLocaleString();
 
-// 인스타그램은 좋아요×100을 조회수로 환산해서 합산
+// 인스타그램은 좋아요×100을 조회수로 환산해서 합산 + 보정값 추가
 const effectiveViews = (item) => {
-  if (item.platform?.includes("Instagram")) {
-    return (item.views||0) + (item.likes||0) * 100;
-  }
-  return item.views||0;
+  const base = item.views||0;
+  const offset = item.viewsOffset||0;
+  const likeBonus = item.platform?.includes("Instagram") ? (item.likes||0)*100 : 0;
+  return base + offset + likeBonus;
 };
 const detectPlatform = (url="") => {
   if(url.includes("youtube.com")||url.includes("youtu.be"))return"YouTube";
@@ -442,7 +479,8 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
     manager:editItem.manager||"", uploadDate:editItem.uploadDate||"", memo:editItem.memo||"",
     manualViews:editItem.views||"", manualLikes:editItem.likes||"", manualComments:editItem.comments||"",
     groupName:editItem.groupName||"", channel:editItem.channel||"",
-  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:"",groupName:"",channel:""});
+    viewsOffset:editItem.viewsOffset||0,
+  } : {url:"",title:"",campaign:"",manager:"",uploadDate:"",memo:"",manualViews:"",manualLikes:"",manualComments:"",groupName:"",channel:"",viewsOffset:0});
   const [showGroupSuggestions,setShowGroupSuggestions]=useState(false);
 
   // 기존 그룹명 목록 (중복 제거)
@@ -484,23 +522,29 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
         else if(isIG)s=await fetchInstagramStats(form.url,apifyToken);
       }catch(e){setFetchErr(e.message);setSaving(false);return;}
     }
+    const contentId = isEditMode ? editItem.id : Date.now();
+    // 썸네일 Supabase Storage에 영구 저장
+    const rawThumb = s?.thumbnail||editItem?.thumbnail||"";
+    const thumbnail = await uploadThumbnail(rawThumb, contentId);
+
     const itemData={
       url:form.url.trim(),
       platform:detected||"Instagram Post",
       title:s?.title||form.title||"",
-      thumbnail:s?.thumbnail||editItem?.thumbnail||"",
+      thumbnail,
       campaign:form.campaign,
       manager:form.manager,
       uploadDate:form.uploadDate||s?.publishedAt||new Date().toISOString().slice(0,10),
       memo:form.memo,
-      views:s?.views||parseInt(form.manualViews)||0,
-      likes:s?.likes||parseInt(form.manualLikes)||0,
-      comments:s?.comments||parseInt(form.manualComments)||0,
+      views:isEditMode ? (parseInt(form.manualViews)||0) : (s?.views||parseInt(form.manualViews)||0),
+      likes:isEditMode ? (parseInt(form.manualLikes)||0) : (s?.likes||parseInt(form.manualLikes)||0),
+      comments:isEditMode ? (parseInt(form.manualComments)||0) : (s?.comments||parseInt(form.manualComments)||0),
       views24h:editItem?.views24h||0,views7d:editItem?.views7d||0,status:"성공",
       lastUpdated:editItem?.lastUpdated||new Date().toISOString(),
       viewsLastWeek:editItem?.viewsLastWeek ?? (s?.views||parseInt(form.manualViews)||0),
       groupName:form.groupName||"",
-      channel:form.channel||"",
+      channel:s?.channel||form.channel||"",
+      viewsOffset:parseInt(form.viewsOffset)||0,
     };
     try{
       if(isEditMode){
@@ -508,7 +552,7 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
         await sb("contents","PATCH",contentToDB(updated),`?id=eq.${editItem.id}`);
         onUpdate(updated);
       }else{
-        const newItem={...itemData,id:Date.now()};
+        const newItem={...itemData,id:contentId};
         await sb("contents","POST",contentToDB(newItem));
         // 등록 시점의 조회수를 "첫 증가분"으로 이력에 기록 (월별/주별 집계에 즉시 반영되도록)
         if(newItem.views>0){
@@ -588,11 +632,12 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
               <PreviewBox/>
             </div>
 
-            {(isThreads||fetchErr||(!canAutoFetch&&(isIG||isYT)))&&(
+            {(isEditMode||isThreads||fetchErr||(!canAutoFetch&&(isIG||isYT)))&&(
               <div style={{background:"#F9FAFB",borderRadius:12,padding:16,border:"1px solid #E5E7EB"}}>
                 <h3 style={{margin:"0 0 12px",fontSize:13,fontWeight:700,color:"#374151"}}>
-                  {isThreads?"🧵 Threads — 수동 입력":"📝 수동 지표 입력"}
+                  {isEditMode?"✏️ 지표 직접 수정":isThreads?"🧵 Threads — 수동 입력":"📝 수동 지표 입력"}
                 </h3>
+                {isEditMode&&<p style={{margin:"0 0 10px",fontSize:11,color:"#9CA3AF"}}>자동으로 가져온 값이 실제와 다를 경우 직접 수정해주세요.</p>}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                   {[{key:"manualViews",label:"조회수"},{key:"manualLikes",label:"좋아요"},{key:"manualComments",label:"댓글"}].map(f=>(
                     <div key={f.key}>
@@ -601,6 +646,15 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
                     </div>
                   ))}
                 </div>
+                {isEditMode&&(
+                  <div style={{marginTop:12,padding:"12px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8}}>
+                    <label style={{...C.lbl,fontSize:11,color:"#92400E"}}>📐 보정값 (실제값 - 자동수집값)</label>
+                    <input style={{...C.inp,marginBottom:0,fontSize:13,padding:"8px 10px"}} type="number" value={form.viewsOffset} onChange={e=>set("viewsOffset",e.target.value)} placeholder="예: 61444 (실제 89000 - 자동 27556)"/>
+                    {form.viewsOffset>0&&<div style={{fontSize:11,color:"#92400E",marginTop:6}}>
+                      최종 표시 조회수: {((parseInt(form.manualViews)||0) + (parseInt(form.viewsOffset)||0)).toLocaleString()}
+                    </div>}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1662,16 +1716,20 @@ export default function App() {
         if (fresh && fresh.views!=null) {
           const baseline = item.viewsLastWeek ?? item.views ?? 0;
           const weeklyGrowth = Math.max(0, fresh.views - baseline);
+          // 썸네일 Storage 업로드 (아직 임시 URL인 경우만)
+          const newThumb = fresh.thumbnail || item.thumbnail;
+          const thumbnail = await uploadThumbnail(newThumb, item.id);
           const updated = {
             ...item,
             views: fresh.views,
             likes: fresh.likes ?? item.likes,
             comments: fresh.comments ?? item.comments,
-            thumbnail: fresh.thumbnail || item.thumbnail,
+            thumbnail,
             views7d: weeklyGrowth,
             views24h: weeklyGrowth,
             viewsLastWeek: fresh.views,
             lastUpdated: nowISO,
+            viewsOffset: item.viewsOffset||0, // 보정값은 유지
           };
           await sb("contents","PATCH",contentToDB(updated),`?id=eq.${item.id}`);
           // 월별/주별 집계를 위한 이력 기록 (증가분이 있을 때만)
