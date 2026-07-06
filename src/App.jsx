@@ -556,6 +556,21 @@ function RegisterModal({onAdd,onUpdate,onClose,ytApiKey,apifyToken,editItem,allC
       if(isEditMode){
         const updated={...itemData,id:editItem.id};
         await sb("contents","PATCH",contentToDB(updated),`?id=eq.${editItem.id}`);
+        // 수동 수정 시 증가분이 있으면 현재 시점으로 이력 기록
+        const prevViews = editItem.views||0;
+        const newViews = itemData.views||0;
+        const manualGrowth = newViews - prevViews;
+        if(manualGrowth !== 0){
+          try{
+            await sb("view_history","POST",{
+              id: Date.now()+Math.floor(Math.random()*1000),
+              content_id: editItem.id,
+              views_at_update: newViews,
+              growth: manualGrowth,
+              recorded_at: new Date().toISOString(),
+            });
+          }catch(histErr){ console.warn("수동 수정 이력 기록 실패:", histErr.message); }
+        }
         onUpdate(updated);
       }else{
         const newItem={...itemData,id:contentId};
@@ -724,19 +739,24 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
 
-  // 월별 집계 — 업로드일 기준 effectiveViews 합산 (누적 조회수와 일치)
+  // 월별 집계 — 실제 증가분만 (초기 등록값 제외)
   const now = new Date();
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
   const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,"0")}`;
 
-  const sumViewsForMonth = (monthKey) =>
-    contents
-      .filter(c => (c.uploadDate||"").slice(0,7) === monthKey)
-      .reduce((s,c) => s + effectiveViews(c), 0);
+  const sumGrowthForMonth = (monthKey) => {
+    return viewHistory
+      .filter(h =>
+        h.recordedAt &&
+        h.recordedAt.slice(0,7) === monthKey &&
+        h.growth !== h.viewsAtUpdate  // 초기 등록값 제외
+      )
+      .reduce((s,h) => s + (h.growth||0), 0);
+  };
 
-  const thisMonthViews = sumViewsForMonth(thisMonthKey);
-  const lastMonthViews = sumViewsForMonth(lastMonthKey);
+  const thisMonthViews = sumGrowthForMonth(thisMonthKey);
+  const lastMonthViews = sumGrowthForMonth(lastMonthKey);
   const monthGoal = monthlyGoals[thisMonthKey] || 0;
   const achieveRate = monthGoal>0 ? Math.round(thisMonthViews/monthGoal*100) : null;
   const momGrowthRate = lastMonthViews>0 ? Math.round((thisMonthViews-lastMonthViews)/lastMonthViews*100) : null;
@@ -1770,7 +1790,7 @@ export default function App() {
     setUpdating(false);
     try {
       const freshHistory = await sb("view_history","GET",null,"?order=recorded_at.desc&limit=2000");
-      setViewHistory((freshHistory||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, recordedAt:h.recorded_at })));
+      setViewHistory((freshHistory||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, viewsAtUpdate:h.views_at_update, recordedAt:h.recorded_at })));
     } catch(e) { console.warn("이력 새로고침 실패:", e.message); }
     if(!silent) alert(`업데이트 완료! ${targets.length}개 콘텐츠의 조회수가 갱신되었습니다.`);
   };
@@ -1790,7 +1810,7 @@ export default function App() {
       ]);
       const loadedContents = (contentRows||[]).map(contentFromDB);
       const loadedSettings = { ytApiKey: settingsRows?.[0]?.yt_api_key||"", apifyToken: settingsRows?.[0]?.apify_token||"" };
-      const loadedHistory = (historyRows||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, recordedAt:h.recorded_at }));
+      const loadedHistory = (historyRows||[]).map(h=>({ id:h.id, contentId:h.content_id, growth:h.growth, viewsAtUpdate:h.views_at_update, recordedAt:h.recorded_at }));
       const loadedGoals = {};
       (goalRows||[]).forEach(g=>{ loadedGoals[g.month]=g.goal; });
       setContents(loadedContents);
