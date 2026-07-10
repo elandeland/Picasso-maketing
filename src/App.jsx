@@ -734,7 +734,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
   const total=contents.length;
   const totalViews=contents.reduce((s,c)=>s+effectiveViews(c),0);
   const week=contents.reduce((s,c)=>s+(c.views7d||0),0);
-  const topView=[...contents].sort((a,b)=>(b.views||0)-(a.views||0))[0];
+  const topView=[...contents].sort((a,b)=>effectiveViews(b)-effectiveViews(a))[0];
   const topGrowth=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0))[0];
   const top24h=[...contents].sort((a,b)=>(b.views24h||0)-(a.views24h||0)).filter(i=>i.views24h>0).slice(0,10);
   const top7d=[...contents].sort((a,b)=>(b.views7d||0)-(a.views7d||0)).filter(i=>i.views7d>0).slice(0,10);
@@ -867,7 +867,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
         {[
-          {title:"최고 조회수 콘텐츠",item:topView,sub:v=>fmtFull(v.views)+" 회",color:"#111827"},
+          {title:"최고 조회수 콘텐츠",item:topView,sub:v=>fmtFull(effectiveViews(v))+" 회",color:"#111827"},
           {title:"🔥 가장 빠르게 성장",item:topGrowth?.views7d>0?topGrowth:null,sub:v=>"7일 +"+fmtFull(v.views7d),color:"#16A34A"},
         ].map(({title,item,sub,color})=>(
           <div key={title} style={C.card}>
@@ -1050,7 +1050,7 @@ function ContentsList({contents,onOpenRegister,onEdit,onDelete,onUpdateAll,updat
 
   const campRank=useMemo(()=>{
     const m={};
-    contents.forEach(c=>{const k=c.campaign||"미분류";if(!m[k])m[k]={name:k,views:0,growth:0,count:0};m[k].views+=c.views||0;m[k].growth+=c.views7d||0;m[k].count++;});
+    contents.forEach(c=>{const k=c.campaign||"미분류";if(!m[k])m[k]={name:k,views:0,growth:0,count:0};m[k].views+=effectiveViews(c);m[k].growth+=c.views7d||0;m[k].count++;});
     return Object.values(m).sort((a,b)=>b.views-a.views).slice(0,10);
   },[contents]);
   const maxViews=campRank[0]?.views||1;
@@ -1592,14 +1592,14 @@ function Campaigns({contents}) {
     contents.forEach(c=>{const k=c.campaign||"미분류";if(!m[k])m[k]={name:k,items:[]};m[k].items.push(c);});
     return Object.values(m).map(g=>({
       name:g.name,count:g.items.length,
-      totalViews:g.items.reduce((s,c)=>s+(c.views||0),0),
-      avgViews:Math.round(g.items.reduce((s,c)=>s+(c.views||0),0)/g.items.length),
+      totalViews:g.items.reduce((s,c)=>s+effectiveViews(c),0),
+      avgViews:Math.round(g.items.reduce((s,c)=>s+effectiveViews(c),0)/g.items.length),
       growth:g.items.reduce((s,c)=>s+(c.views7d||0),0),
       growth24h:g.items.reduce((s,c)=>s+(c.views24h||0),0),
       yt:g.items.filter(c=>c.platform==="YouTube").length,
       ig:g.items.filter(c=>c.platform?.includes("Instagram")).length,
       th:g.items.filter(c=>c.platform==="Threads").length,
-      top:[...g.items].sort((a,b)=>(b.views||0)-(a.views||0))[0],
+      top:[...g.items].sort((a,b)=>effectiveViews(b)-effectiveViews(a))[0],
     })).sort((a,b)=>b.totalViews-a.totalViews);
   },[contents]);
 
@@ -1617,7 +1617,7 @@ function Campaigns({contents}) {
     <div>
       <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>캠페인별 분석</h1>
       <p style={{margin:"0 0 24px",fontSize:13,color:"#6B7280"}}>{campaigns.length}개 그룹</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(460px, 1fr))",gap:16}}>
         {campaigns.map(c=>(
           <div key={c.name} style={{...C.card,borderTop:"3px solid "+RED}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -1626,15 +1626,15 @@ function Campaigns({contents}) {
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
                 {label:"콘텐츠 수",value:c.count},
-                {label:"총 조회수",value:fmtFull(c.totalViews)},
-                {label:"평균 조회수",value:fmtFull(c.avgViews)},
-                {label:"누적 증가",value:c.growth>0?"+"+fmtFull(c.growth):"—",green:true},
-                {label:"24h 증가",value:c.growth24h>0?"+"+fmtFull(c.growth24h):"—",green:true},
-                {label:"7일 증가",value:c.growth>0?"+"+fmtFull(c.growth):"—",green:true},
+                {label:"총 조회수",value:fmt(c.totalViews)},
+                {label:"평균 조회수",value:fmt(c.avgViews)},
+                {label:"누적 증가",value:c.growth>0?"+"+fmt(c.growth):"—",green:true},
+                {label:"24h 증가",value:c.growth24h>0?"+"+fmt(c.growth24h):"—",green:true},
+                {label:"7일 증가",value:c.growth>0?"+"+fmt(c.growth):"—",green:true},
               ].map(s=>(
-                <div key={s.label} style={{border:"1px solid "+RED_BORDER,borderRadius:8,padding:"10px 12px"}}>
-                  <div style={{fontSize:11,color:"#6B7280",marginBottom:4}}>{s.label}</div>
-                  <div style={{fontSize:15,fontWeight:800,color:s.green&&s.value!=="—"?"#16A34A":"#111827"}}>{s.value}</div>
+                <div key={s.label} style={{border:"1px solid "+RED_BORDER,borderRadius:8,padding:"8px 10px",minWidth:0}}>
+                  <div style={{fontSize:10,color:"#6B7280",marginBottom:3,whiteSpace:"nowrap"}}>{s.label}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:s.green&&s.value!=="—"?"#16A34A":"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.value}</div>
                 </div>
               ))}
             </div>
