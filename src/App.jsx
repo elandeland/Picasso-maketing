@@ -1663,6 +1663,480 @@ function Campaigns({contents}) {
 // ════════════════════════════════════════════════════════
 // 회원 관리 (DB 연동)
 // ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
+// 목표관리 — 대시보드
+// ════════════════════════════════════════════════════════
+function GoalDashboard({projects,execGoals,weeklyChecks}) {
+  const PURPLE="#6B21A8";
+  const [selProject,setSelProject]=useState(null);
+  const [expandedGoal,setExpandedGoal]=useState(null);
+
+  const pid = selProject || projects[0]?.id;
+  const proj = projects.find(p=>p.id===pid);
+  const goals = execGoals.filter(g=>g.projectId===pid).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+
+  // 이번 주 월요일
+  const getMonday=(d=new Date())=>{
+    const dt=new Date(d); dt.setHours(0,0,0,0);
+    const day=(dt.getDay()+6)%7;
+    dt.setDate(dt.getDate()-day);
+    return dt;
+  };
+  const thisMonday=getMonday();
+  const fmt=(d)=>`${d.getMonth()+1}/${d.getDate()}`;
+
+  // 이번달 주차 목록 (해당 월 포함 주차)
+  const getMonthWeeks=()=>{
+    const now=new Date();
+    const year=now.getFullYear(), month=now.getMonth();
+    const weeks=[];
+    const first=new Date(year,month,1);
+    const last=new Date(year,month+1,0);
+    let mon=getMonday(first);
+    while(mon<=last){
+      weeks.push(new Date(mon));
+      mon=new Date(mon); mon.setDate(mon.getDate()+7);
+    }
+    return weeks;
+  };
+  const weeks=getMonthWeeks();
+
+  const getCheck=(goalId,weekStart,num)=>
+    weeklyChecks.find(c=>c.execGoalId===goalId&&c.weekStart===weekStart.toISOString().slice(0,10)&&c.checkNum===num);
+
+  const statusDot=(status)=>{
+    if(status==="완료") return {color:"#3B6D11",label:"✓"};
+    if(status==="실패") return {color:"#A32D2D",label:"✕"};
+    if(status==="진행중") return {color:"#185FA5",label:"●"};
+    return {color:"#D1D5DB",label:"○"};
+  };
+
+  if(projects.length===0) return(
+    <div>
+      <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>🎯 목표관리 대시보드</h1>
+      <div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:12,textAlign:"center",padding:"80px 24px",marginTop:24}}>
+        <div style={{fontSize:50,marginBottom:16}}>🎯</div>
+        <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>등록된 프로젝트가 없습니다</div>
+        <div style={{fontSize:13,color:"#9CA3AF"}}>목표 관리 탭에서 프로젝트와 실행목표를 먼저 추가해주세요.</div>
+      </div>
+    </div>
+  );
+
+  return(
+    <div>
+      <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>🎯 목표관리 대시보드</h1>
+      <p style={{margin:"0 0 20px",fontSize:13,color:"#6B7280"}}>프로젝트별 주차 달성 현황</p>
+
+      {/* 프로젝트 탭 */}
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        {projects.map(p=>(
+          <button key={p.id} onClick={()=>{setSelProject(p.id);setExpandedGoal(null);}}
+            style={{padding:"6px 14px",borderRadius:20,border:`0.5px solid ${pid===p.id?PURPLE:"#E5E7EB"}`,background:pid===p.id?PURPLE:"#fff",color:pid===p.id?"#fff":"#6B7280",fontSize:12,fontWeight:pid===p.id?600:400,cursor:"pointer"}}>
+            {p.title}
+          </button>
+        ))}
+      </div>
+
+      {/* 진도표 */}
+      {proj&&(
+        <div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:12,marginBottom:20,overflow:"hidden"}}>
+          <div style={{padding:"11px 16px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:"#4C1D95"}}>{proj.title}</div>
+              <div style={{fontSize:11,color:PURPLE}}>{proj.assignee&&`담당: ${proj.assignee} · `}실행목표 {goals.length}개</div>
+            </div>
+          </div>
+          {/* 헤더 */}
+          <div style={{display:"grid",gridTemplateColumns:"130px repeat("+weeks.length+",1fr)",background:"#F9FAFB",borderBottom:"0.5px solid #E5E7EB"}}>
+            <div style={{padding:"7px 12px",fontSize:10,color:"#9CA3AF",borderRight:"0.5px solid #E5E7EB"}}>실행목표</div>
+            {weeks.map((w,i)=>{
+              const isCur=w.toISOString().slice(0,10)===thisMonday.toISOString().slice(0,10);
+              return(
+                <div key={i} style={{padding:"7px 8px",fontSize:10,color:isCur?PURPLE:"#9CA3AF",fontWeight:isCur?700:400,borderRight:"0.5px solid #E5E7EB",background:isCur?"#F3E8FF":"transparent",textAlign:"center"}}>
+                  {w.getMonth()+1}/{w.getDate()}{isCur?" ◀":""}
+                </div>
+              );
+            })}
+          </div>
+          {/* 실행목표 행 */}
+          {goals.map(g=>(
+            <Fragment key={g.id}>
+              <div onClick={()=>setExpandedGoal(expandedGoal===g.id?null:g.id)}
+                style={{display:"grid",gridTemplateColumns:"130px repeat("+weeks.length+",1fr)",borderBottom:"0.5px solid #F3F4F6",cursor:"pointer",background:expandedGoal===g.id?"#FAFAF8":"#fff"}}>
+                <div style={{padding:"10px 12px",borderRight:"0.5px solid #E5E7EB"}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#111827"}}>{g.title}</div>
+                  {g.description&&<div style={{fontSize:10,color:"#9CA3AF",marginTop:1}}>{g.description}</div>}
+                </div>
+                {weeks.map((w,i)=>{
+                  const isCur=w.toISOString().slice(0,10)===thisMonday.toISOString().slice(0,10);
+                  const c1=getCheck(g.id,w,1);
+                  const c2=getCheck(g.id,w,2);
+                  const d1=statusDot(c1?.status);
+                  const d2=statusDot(c2?.status);
+                  return(
+                    <div key={i} style={{padding:"8px",borderRight:"0.5px solid #E5E7EB",background:isCur?"#F3E8FF":"transparent",display:"flex",flexDirection:"column",gap:3,alignItems:"flex-start"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{color:d1.color,fontSize:11,fontWeight:700}}>{d1.label}</span>
+                        <span style={{fontSize:10,color:d1.color==="#D1D5DB"?"#9CA3AF":d1.color}}>1차</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{color:d2.color,fontSize:11,fontWeight:700}}>{d2.label}</span>
+                        <span style={{fontSize:10,color:d2.color==="#D1D5DB"?"#9CA3AF":d2.color}}>2차</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 펼쳐진 상세 */}
+              {expandedGoal===g.id&&(
+                <div style={{borderBottom:"0.5px solid #E5E7EB",background:"#F9FAFB",padding:"14px 16px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat("+Math.min(weeks.length,5)+",1fr)",gap:8}}>
+                    {weeks.slice(0,5).map((w,i)=>{
+                      const isCur=w.toISOString().slice(0,10)===thisMonday.toISOString().slice(0,10);
+                      const c1=getCheck(g.id,w,1);
+                      const c2=getCheck(g.id,w,2);
+                      return(
+                        <div key={i} style={{background:"#fff",border:`0.5px solid ${isCur?"#C084FC":"#E5E7EB"}`,borderRadius:8,overflow:"hidden",fontSize:10}}>
+                          <div style={{padding:"5px 8px",background:isCur?"#F3E8FF":"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",color:isCur?PURPLE:"#9CA3AF",fontWeight:isCur?600:400,display:"flex",justifyContent:"space-between"}}>
+                            <span>{w.getMonth()+1}/{w.getDate()}</span>
+                            {isCur&&<span style={{fontSize:9}}>◀ 현재</span>}
+                          </div>
+                          {[{c:c1,n:"1차"},{c:c2,n:"2차"}].map(({c,n})=>(
+                            <div key={n} style={{padding:"7px 8px",borderBottom:"0.5px solid #F3F4F6"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                                <span style={{color:"#9CA3AF"}}>{n}</span>
+                                <span style={{color:statusDot(c?.status).color,fontWeight:600}}>{c?.status||"예정"}</span>
+                              </div>
+                              {c?.goalText&&<div style={{fontWeight:600,color:"#111827",marginBottom:4,lineHeight:1.3}}>{c.goalText}</div>}
+                              {c?.rawVoice&&<div style={{marginBottom:3}}><span style={{color:"#9CA3AF"}}>🗣 </span><span style={{color:"#374151",lineHeight:1.4}}>{c.rawVoice}</span></div>}
+                              {c?.executed&&<div><span style={{color:"#9CA3AF"}}>✅ </span><span style={{color:"#374151",lineHeight:1.4}}>{c.executed}</span></div>}
+                              {!c&&<div style={{color:"#D1D5DB",fontStyle:"italic"}}>미작성</div>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// 목표관리 — 목표 관리 (작성)
+// ════════════════════════════════════════════════════════
+function GoalManage({projects,execGoals,weeklyChecks,setProjects,setExecGoals,setWeeklyChecks}) {
+  const PURPLE="#6B21A8";
+  const [tab,setTab]=useState("week"); // "proj" | "week"
+  const [selProject,setSelProject]=useState(null);
+  const [selWeek,setSelWeek]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [checkDraft,setCheckDraft]=useState({});
+
+  // 프로젝트 설정 폼
+  const [projForm,setProjForm]=useState({title:"",assignee:"",startDate:"",endDate:""});
+  const [goalForms,setGoalForms]=useState([{title:"",description:"",assignee:""}]);
+  const [editingProj,setEditingProj]=useState(null);
+
+  const pid=selProject||projects[0]?.id;
+  const proj=projects.find(p=>p.id===pid);
+  const goals=execGoals.filter(g=>g.projectId===pid).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+
+  // 월요일 계산
+  const getMonday=(d=new Date())=>{
+    const dt=new Date(d); dt.setHours(0,0,0,0);
+    const day=(dt.getDay()+6)%7;
+    dt.setDate(dt.getDate()-day);
+    return dt;
+  };
+  const thisMonday=getMonday();
+
+  // 이번달 주차
+  const getMonthWeeks=()=>{
+    const now=new Date();
+    const year=now.getFullYear(),month=now.getMonth();
+    const weeks=[];
+    const first=new Date(year,month,1);
+    const last=new Date(year,month+1,0);
+    let mon=getMonday(first);
+    while(mon<=last){weeks.push(new Date(mon));mon=new Date(mon);mon.setDate(mon.getDate()+7);}
+    return weeks;
+  };
+  const weeks=getMonthWeeks();
+  const curWeek=selWeek||thisMonday.toISOString().slice(0,10);
+
+  // 체크 데이터 초기화
+  useEffect(()=>{
+    if(!pid) return;
+    const draft={};
+    goals.forEach(g=>{
+      [1,2].forEach(n=>{
+        const key=`${g.id}_${curWeek}_${n}`;
+        const existing=weeklyChecks.find(c=>c.execGoalId===g.id&&c.weekStart===curWeek&&c.checkNum===n);
+        draft[key]=existing?{...existing}:{execGoalId:g.id,weekStart:curWeek,checkNum:n,goalText:"",rawVoice:"",executed:"",status:"예정"};
+      });
+    });
+    setCheckDraft(draft);
+  },[pid,curWeek,goals.length]);
+
+  const setField=(key,field,val)=>setCheckDraft(d=>({...d,[key]:{...d[key],[field]:val}}));
+
+  // 체크 저장
+  const saveChecks=async()=>{
+    setSaving(true);
+    try{
+      const newChecks=[...weeklyChecks];
+      for(const [key,draft] of Object.entries(checkDraft)){
+        if(!draft.goalText&&!draft.rawVoice&&!draft.executed&&draft.status==="예정") continue;
+        const existing=weeklyChecks.find(c=>c.execGoalId===draft.execGoalId&&c.weekStart===draft.weekStart&&c.checkNum===draft.checkNum);
+        const dbRow={
+          execution_goal_id:draft.execGoalId,
+          week_start:draft.weekStart,
+          check_num:draft.checkNum,
+          goal_text:draft.goalText,
+          raw_voice:draft.rawVoice,
+          executed:draft.executed,
+          status:draft.status,
+        };
+        if(existing){
+          await sb("weekly_checks","PATCH",dbRow,`?id=eq.${existing.id}`);
+          const idx=newChecks.findIndex(c=>c.id===existing.id);
+          if(idx>=0) newChecks[idx]={...existing,...draft};
+        }else{
+          const id=Date.now()+Math.floor(Math.random()*1000);
+          await sb("weekly_checks","POST",{id,...dbRow});
+          newChecks.push({id,...draft});
+        }
+      }
+      setWeeklyChecks(newChecks);
+      alert("저장 완료!");
+    }catch(e){alert("저장 실패: "+e.message);}
+    setSaving(false);
+  };
+
+  // 프로젝트 저장
+  const saveProject=async()=>{
+    if(!projForm.title.trim()) return alert("프로젝트명을 입력해주세요.");
+    setSaving(true);
+    try{
+      const pid2=Date.now();
+      await sb("projects","POST",{id:pid2,title:projForm.title,assignee:projForm.assignee,start_date:projForm.startDate||null,end_date:projForm.endDate||null});
+      const newGoals=[];
+      for(let i=0;i<goalForms.length;i++){
+        if(!goalForms[i].title.trim()) continue;
+        const gid=Date.now()+i+1;
+        await sb("execution_goals","POST",{id:gid,project_id:pid2,title:goalForms[i].title,description:goalForms[i].description,assignee:goalForms[i].assignee,order_num:i});
+        newGoals.push({id:gid,projectId:pid2,title:goalForms[i].title,description:goalForms[i].description,assignee:goalForms[i].assignee,sortOrder:i});
+      }
+      setProjects(p=>[...p,{id:pid2,...projForm}]);
+      setExecGoals(g=>[...g,...newGoals]);
+      setSelProject(pid2);
+      setProjForm({title:"",assignee:"",startDate:"",endDate:""});
+      setGoalForms([{title:"",description:"",assignee:""}]);
+      setTab("week");
+      alert("프로젝트 저장 완료!");
+    }catch(e){alert("저장 실패: "+e.message);}
+    setSaving(false);
+  };
+
+  const C={
+    card:{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:12,overflow:"hidden",marginBottom:12},
+    inp:{width:"100%",padding:"8px 10px",border:"0.5px solid #E5E7EB",borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none",color:"#111827",background:"#fff"},
+    lbl:{fontSize:11,color:"#6B7280",display:"block",marginBottom:4},
+  };
+
+  const statusColors={"예정":"#9CA3AF","진행중":"#185FA5","완료":"#3B6D11","실패":"#A32D2D"};
+  const statusBg={"예정":"#F9FAFB","진행중":"#EFF6FF","완료":"#F0FDF4","실패":"#FEF2F2"};
+
+  return(
+    <div>
+      <h1 style={{margin:"0 0 4px",fontSize:24,fontWeight:800}}>🎯 목표 관리</h1>
+      <p style={{margin:"0 0 16px",fontSize:13,color:"#6B7280"}}>프로젝트 설정 및 주간 체크 작성</p>
+
+      {/* 탭 */}
+      <div style={{display:"flex",gap:0,marginBottom:20,borderBottom:"0.5px solid #E5E7EB"}}>
+        {[{key:"proj",label:"프로젝트 설정"},{key:"week",label:"주간 체크 작성"}].map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{padding:"8px 18px",fontSize:13,cursor:"pointer",color:tab===t.key?PURPLE:"#6B7280",borderBottom:tab===t.key?`2px solid ${PURPLE}`:"2px solid transparent",border:"none",background:"none",fontWeight:tab===t.key?600:400,fontFamily:"inherit",marginBottom:-1}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 프로젝트 설정 탭 */}
+      {tab==="proj"&&(
+        <div>
+          {/* 기존 프로젝트 목록 */}
+          {projects.length>0&&(
+            <>
+              <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8,fontWeight:600,letterSpacing:0.5}}>기존 프로젝트</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+                {projects.map(p=>(
+                  <div key={p.id} style={{padding:"8px 14px",border:"0.5px solid #E5E7EB",borderRadius:8,background:"#fff",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:13,fontWeight:600,color:"#111827"}}>{p.title}</span>
+                    {p.assignee&&<span style={{fontSize:11,color:"#9CA3AF"}}>{p.assignee}</span>}
+                    <span style={{padding:"2px 7px",borderRadius:20,background:"#F3E8FF",color:PURPLE,fontSize:10}}>
+                      {execGoals.filter(g=>g.projectId===p.id).length}개 목표
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8,fontWeight:600,letterSpacing:0.5}}>새 프로젝트 추가</div>
+          <div style={C.card}>
+            <div style={{padding:"11px 14px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC"}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#4C1D95"}}>프로젝트 기본 정보</span>
+            </div>
+            <div style={{padding:"14px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div><label style={C.lbl}>프로젝트명 *</label><input style={C.inp} value={projForm.title} onChange={e=>setProjForm(f=>({...f,title:e.target.value}))} placeholder="예: 피카소 릴스"/></div>
+                <div><label style={C.lbl}>담당자</label><input style={C.inp} value={projForm.assignee} onChange={e=>setProjForm(f=>({...f,assignee:e.target.value}))} placeholder="담당자 이름"/></div>
+                <div><label style={C.lbl}>시작일</label><input style={C.inp} type="date" value={projForm.startDate} onChange={e=>setProjForm(f=>({...f,startDate:e.target.value}))}/></div>
+                <div><label style={C.lbl}>종료일</label><input style={C.inp} type="date" value={projForm.endDate} onChange={e=>setProjForm(f=>({...f,endDate:e.target.value}))}/></div>
+              </div>
+            </div>
+          </div>
+
+          <div style={C.card}>
+            <div style={{padding:"11px 14px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#4C1D95"}}>실행목표 설정</span>
+              <span style={{fontSize:11,color:PURPLE}}>3~4개 권장</span>
+            </div>
+            <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:8}}>
+              {goalForms.map((g,i)=>(
+                <div key={i} style={{border:"0.5px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
+                  <div style={{padding:"8px 12px",background:"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:20,height:20,borderRadius:"50%",background:"#F3E8FF",color:PURPLE,fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                    <input style={{flex:1,border:"none",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",outline:"none",color:"#111827"}} value={g.title} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,title:e.target.value}:f))} placeholder="실행목표 이름"/>
+                    {goalForms.length>1&&<button onClick={()=>setGoalForms(fs=>fs.filter((_,j)=>j!==i))} style={{border:"none",background:"none",color:"#9CA3AF",cursor:"pointer",fontSize:18,padding:"0 2px"}}>×</button>}
+                  </div>
+                  <div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div><label style={C.lbl}>세부 설명</label><input style={C.inp} value={g.description} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,description:e.target.value}:f))} placeholder="간단한 설명"/></div>
+                    <div><label style={C.lbl}>담당자</label><input style={C.inp} value={g.assignee} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,assignee:e.target.value}:f))} placeholder="담당자"/></div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={()=>setGoalForms(f=>[...f,{title:"",description:"",assignee:""}])}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",border:"0.5px dashed #D1D5DB",borderRadius:8,color:"#9CA3AF",fontSize:12,cursor:"pointer",background:"transparent"}}>
+                + 실행목표 추가
+              </button>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"12px 14px",borderTop:"0.5px solid #E5E7EB"}}>
+              <button onClick={saveProject} disabled={saving}
+                style={{padding:"9px 20px",borderRadius:8,border:"none",background:PURPLE,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",opacity:saving?0.6:1}}>
+                {saving?"저장 중...":"프로젝트 저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 주간 체크 탭 */}
+      {tab==="week"&&(
+        <div>
+          {/* 프로젝트 선택 */}
+          <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+            {projects.map(p=>(
+              <button key={p.id} onClick={()=>setSelProject(p.id)}
+                style={{padding:"6px 14px",borderRadius:20,border:`0.5px solid ${pid===p.id?PURPLE:"#E5E7EB"}`,background:pid===p.id?PURPLE:"#fff",color:pid===p.id?"#fff":"#6B7280",fontSize:12,fontWeight:pid===p.id?600:400,cursor:"pointer"}}>
+                {p.title}
+              </button>
+            ))}
+          </div>
+
+          {/* 주차 탭 */}
+          {weeks.length>0&&(
+            <div style={{display:"flex",gap:0,marginBottom:16,borderBottom:"0.5px solid #E5E7EB",overflowX:"auto"}}>
+              {weeks.map((w,i)=>{
+                const wk=w.toISOString().slice(0,10);
+                const isCur=wk===thisMonday.toISOString().slice(0,10);
+                const isSel=wk===curWeek;
+                return(
+                  <button key={i} onClick={()=>setSelWeek(wk)}
+                    style={{padding:"7px 14px",fontSize:12,cursor:"pointer",color:isSel?PURPLE:"#6B7280",borderBottom:isSel?`2px solid ${PURPLE}`:"2px solid transparent",border:"none",background:isCur&&!isSel?"#F3E8FF":"transparent",fontWeight:isSel?600:400,fontFamily:"inherit",marginBottom:-1,whiteSpace:"nowrap"}}>
+                    {w.getMonth()+1}/{w.getDate()}{isCur?" ◀":""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {goals.length===0?(
+            <div style={{...C.card,textAlign:"center",padding:"60px 24px"}}>
+              <div style={{fontSize:40,marginBottom:12}}>📋</div>
+              <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>실행목표가 없습니다</div>
+              <button onClick={()=>setTab("proj")} style={{padding:"8px 18px",borderRadius:8,border:"none",background:PURPLE,color:"#fff",fontSize:13,cursor:"pointer"}}>프로젝트 설정으로 이동</button>
+            </div>
+          ):(
+            <>
+              {goals.map(g=>{
+                const k1=`${g.id}_${curWeek}_1`;
+                const k2=`${g.id}_${curWeek}_2`;
+                const d1=checkDraft[k1]||{};
+                const d2=checkDraft[k2]||{};
+                return(
+                  <div key={g.id} style={{...C.card,marginBottom:16}}>
+                    <div style={{padding:"10px 14px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:13,fontWeight:600,color:"#4C1D95"}}>{g.title}</span>
+                      {g.description&&<span style={{fontSize:11,color:PURPLE}}>{g.description}</span>}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
+                      {[{key:k1,d:d1,n:"1차 체크"},{key:k2,d:d2,n:"2차 체크"}].map(({key,d,n})=>(
+                        <div key={key} style={{padding:"12px 14px",borderRight:key===k1?"0.5px solid #E5E7EB":"none"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                            <span style={{fontSize:11,fontWeight:600,color:"#6B7280"}}>{n}</span>
+                            <select value={d.status||"예정"} onChange={e=>setField(key,"status",e.target.value)}
+                              style={{padding:"3px 8px",border:"0.5px solid #E5E7EB",borderRadius:20,fontSize:11,fontFamily:"inherit",color:statusColors[d.status||"예정"],background:statusBg[d.status||"예정"],cursor:"pointer"}}>
+                              {["예정","진행중","완료","실패"].map(s=><option key={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div style={{marginBottom:8}}>
+                            <label style={C.lbl}>이번 체크 목표</label>
+                            <input style={C.inp} value={d.goalText||""} onChange={e=>setField(key,"goalText",e.target.value)} placeholder="이번 체크에서 달성할 것..."/>
+                          </div>
+                          <div style={{marginBottom:8}}>
+                            <div style={{border:"0.5px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
+                              <div style={{padding:"5px 8px",background:"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",fontSize:10,color:"#9CA3AF"}}>🗣 생소리</div>
+                              <textarea value={d.rawVoice||""} onChange={e=>setField(key,"rawVoice",e.target.value)}
+                                placeholder="현장에서 느낀 것, 날 것의 이야기..."
+                                style={{width:"100%",padding:"8px",border:"none",background:"transparent",fontSize:11,fontFamily:"inherit",resize:"none",minHeight:52,lineHeight:1.5,outline:"none",color:"#111827"}}/>
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{border:"0.5px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
+                              <div style={{padding:"5px 8px",background:"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",fontSize:10,color:"#9CA3AF"}}>✅ 실행한 것</div>
+                              <textarea value={d.executed||""} onChange={e=>setField(key,"executed",e.target.value)}
+                                placeholder="실제로 무엇을 했는지 구체적으로..."
+                                style={{width:"100%",padding:"8px",border:"none",background:"transparent",fontSize:11,fontFamily:"inherit",resize:"none",minHeight:52,lineHeight:1.5,outline:"none",color:"#111827"}}/>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                <button onClick={saveChecks} disabled={saving}
+                  style={{padding:"10px 24px",borderRadius:8,border:"none",background:PURPLE,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",opacity:saving?0.6:1}}>
+                  {saving?"저장 중...":"저장 완료"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MemberAdmin({users,refreshUsers,currentUser}) {
   const [filter,setFilter]=useState("전체");
   if(currentUser.role!=="admin")return<div style={{...C.card,textAlign:"center",padding:60}}><div style={{fontSize:48,marginBottom:16}}>🔒</div><div style={{fontSize:18,fontWeight:700}}>관리자 전용 페이지입니다</div></div>;
@@ -1862,13 +2336,16 @@ export default function App() {
 
   const loadAll=async()=>{
     try{
-      const [contentRows, userRows, settingsRows, historyRows, goalRows, ytRows] = await Promise.all([
+      const [contentRows, userRows, settingsRows, historyRows, goalRows, ytRows, projectRows, execRows, checkRows] = await Promise.all([
         sb("contents","GET",null,"?order=id.desc"),
         sb("users","GET"),
         sb("app_settings","GET",null,"?id=eq.1"),
         sb("view_history","GET",null,"?order=recorded_at.desc&limit=2000"),
         sb("monthly_goals","GET"),
         sb("yt_contents","GET",null,"?order=id.desc"),
+        sb("projects","GET",null,"?order=id.desc"),
+        sb("execution_goals","GET",null,"?order=sort_order.asc"),
+        sb("weekly_checks","GET",null,"?order=week_start.desc"),
       ]);
       const loadedContents = (contentRows||[]).map(contentFromDB);
       const loadedSettings = { ytApiKey: settingsRows?.[0]?.yt_api_key||"", apifyToken: settingsRows?.[0]?.apify_token||"" };
@@ -1881,6 +2358,9 @@ export default function App() {
       setViewHistory(loadedHistory);
       setMonthlyGoals(loadedGoals);
       setYtContents((ytRows||[]).map(ytFromDB));
+      setProjects((projectRows||[]).map(r=>({id:r.id,title:r.title,assignee:r.assignee,startDate:r.start_date,endDate:r.end_date})));
+      setExecGoals((execRows||[]).map(r=>({id:r.id,projectId:r.project_id,title:r.title,description:r.description,assignee:r.assignee,sortOrder:r.sort_order})));
+      setWeeklyChecks((checkRows||[]).map(r=>({id:r.id,execGoalId:r.execution_goal_id,weekStart:r.week_start,checkNum:r.check_num,goalText:r.goal_text,rawVoice:r.raw_voice,executed:r.executed,status:r.status||"예정"})));
       return { contents: loadedContents, settings: loadedSettings };
     }catch(e){
       setInitError(e.message);
@@ -1906,24 +2386,39 @@ export default function App() {
   },[]);
 
   const isAdmin=currentUser?.role==="admin";
-  const [workspace,setWorkspace]=useState("picasso"); // "picasso" | "youtube"
+  const [workspace,setWorkspace]=useState("picasso"); // "picasso" | "youtube" | "goal"
   const [showWorkspaceDrop,setShowWorkspaceDrop]=useState(false);
+  const [projects,setProjects]=useState([]);
+  const [execGoals,setExecGoals]=useState([]);
+  const [weeklyChecks,setWeeklyChecks]=useState([]);
 
   // 워크스페이스 전환 시 기본 페이지로 이동
   const switchWorkspace=(ws)=>{
     setWorkspace(ws);
-    setPage(ws==="picasso"?"dashboard":"yt_dashboard");
+    setPage(ws==="picasso"?"dashboard":ws==="youtube"?"yt_dashboard":"goal_dashboard");
     setShowWorkspaceDrop(false);
   };
 
   const isYT = workspace==="youtube";
+  const isGoal = workspace==="goal";
   const BLUE="#1A73E8";
   const BLUE_DARK="#1557B0";
   const BLUE_LIGHT="#EEF4FD";
   const BLUE_BORDER="#BDD5FB";
-  const THEME={ bg: isYT?"#F0F4FF":"#FDF8F8", navBorder: isYT?BLUE_BORDER:RED_BORDER, navShadow: isYT?"rgba(26,115,232,0.07)":"rgba(192,0,26,0.07)", accent: isYT?BLUE:RED, accentDark: isYT?BLUE_DARK:RED_DARK, accentLight: isYT?BLUE_LIGHT:RED_LIGHT };
+  const PURPLE="#6B21A8";
+  const PURPLE_DARK="#4C1D95";
+  const PURPLE_LIGHT="#F3E8FF";
+  const PURPLE_BORDER="#C084FC";
+  const THEME = isGoal
+    ? { bg:"#FAF7FF", navBorder:PURPLE_BORDER, navShadow:"rgba(107,33,168,0.07)", accent:PURPLE, accentDark:PURPLE_DARK, accentLight:PURPLE_LIGHT }
+    : isYT
+    ? { bg:"#F0F4FF", navBorder:BLUE_BORDER, navShadow:"rgba(26,115,232,0.07)", accent:BLUE, accentDark:BLUE_DARK, accentLight:BLUE_LIGHT }
+    : { bg:"#FDF8F8", navBorder:RED_BORDER, navShadow:"rgba(192,0,26,0.07)", accent:RED, accentDark:RED_DARK, accentLight:RED_LIGHT };
 
-  const nav = isYT ? [
+  const nav = isGoal ? [
+    {key:"goal_dashboard",label:"대시보드"},
+    {key:"goal_manage",label:"목표 관리"},
+  ] : isYT ? [
     {key:"yt_dashboard",label:"유튜브 대시보드"},
     {key:"yt_contents",label:"유튜브 콘텐츠"},
   ] : [
@@ -2016,11 +2511,11 @@ export default function App() {
           <div style={{position:"relative",marginRight:16,flexShrink:0}}>
             <button onClick={()=>setShowWorkspaceDrop(d=>!d)} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",borderRadius:10,border:`1px solid ${THEME.navBorder}`,background:THEME.accentLight,cursor:"pointer"}}>
               <div style={{width:28,height:28,background:THEME.accent,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>
-                {isYT?"📺":"📊"}
+                {isGoal?"🎯":isYT?"📺":"📊"}
               </div>
               <div style={{textAlign:"left"}}>
-                <div style={{fontSize:12,fontWeight:800,color:THEME.accent,lineHeight:1.2}}>{isYT?"유튜브 채널":"피카소 TF"}</div>
-                <div style={{fontSize:10,color:"#9CA3AF"}}>{isYT?"큐레이터알 · 단독 쇼츠":"조회수 모니터링"}</div>
+                <div style={{fontSize:12,fontWeight:800,color:THEME.accent,lineHeight:1.2}}>{isGoal?"목표관리":isYT?"유튜브 채널":"피카소 TF"}</div>
+                <div style={{fontSize:10,color:"#9CA3AF"}}>{isGoal?"프로젝트 · 실행목표":isYT?"큐레이터알 · 단독 쇼츠":"조회수 모니터링"}</div>
               </div>
               <span style={{fontSize:10,color:"#9CA3AF",marginLeft:2}}>▼</span>
             </button>
@@ -2067,6 +2562,7 @@ export default function App() {
             {[
               {key:"picasso",label:"피카소 TF",sub:"대시보드 · 콘텐츠 · 캠페인",icon:"📊",color:RED},
               {key:"youtube",label:"유튜브 채널",sub:"큐레이터알 · 단독 쇼츠",icon:"📺",color:BLUE},
+              {key:"goal",label:"목표관리",sub:"프로젝트 · 실행목표 · 주간체크",icon:"🎯",color:PURPLE},
             ].map(w=>(
               <button key={w.key} onClick={()=>switchWorkspace(w.key)}
                 style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"none",background:workspace===w.key?`${w.color}10`:"#fff",cursor:"pointer",textAlign:"left"}}>
@@ -2088,6 +2584,8 @@ export default function App() {
         {page==="campaigns"&&<Campaigns contents={contents}/>}
         {page==="yt_dashboard"&&<YoutubeDashboard ytContents={ytContents} onOpenRegister={()=>setShowYtRegister(true)}/>}
         {page==="yt_contents"&&<YtContentsList ytContents={ytContents} onOpenRegister={()=>setShowYtRegister(true)} onEdit={item=>setYtEditItem(item)} onDelete={handleDeleteYt} onUpdateAll={handleUpdateYt} updating={updating} updateProgress={updateProgress}/>}
+        {page==="goal_dashboard"&&<GoalDashboard projects={projects} execGoals={execGoals} weeklyChecks={weeklyChecks}/>}
+        {page==="goal_manage"&&<GoalManage projects={projects} execGoals={execGoals} weeklyChecks={weeklyChecks} setProjects={setProjects} setExecGoals={setExecGoals} setWeeklyChecks={setWeeklyChecks}/>}
         {page==="members"&&<MemberAdmin users={users} refreshUsers={loadAll} currentUser={currentUser}/>}
         {page==="settings"&&<Settings settings={settings} refreshSettings={loadAll} currentUser={currentUser} monthlyGoals={monthlyGoals} refreshGoals={loadAll}/>}
       </main>
