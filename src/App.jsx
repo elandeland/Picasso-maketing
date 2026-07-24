@@ -841,7 +841,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
         </div>
         <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
           <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>누적 조회수</div>
-          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews+550000)}</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews)}</div>
           <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>전체 플랫폼 합계</div>
         </div>
       </div>
