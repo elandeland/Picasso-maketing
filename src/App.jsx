@@ -841,7 +841,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
         </div>
         <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
           <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>누적 조회수</div>
-          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews)}</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews+500000)}</div>
           <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>전체 플랫폼 합계</div>
         </div>
       </div>
@@ -1924,22 +1924,42 @@ function GoalManage({projects,execGoals,weeklyChecks,setProjects,setExecGoals,se
     if(!projForm.title.trim()) return alert("프로젝트명을 입력해주세요.");
     setSaving(true);
     try{
-      const pid2=Date.now();
-      await sb("projects","POST",{id:pid2,title:projForm.title,assignee:projForm.assignee,start_date:projForm.startDate||null,end_date:projForm.endDate||null});
-      const newGoals=[];
-      for(let i=0;i<goalForms.length;i++){
-        if(!goalForms[i].title.trim()) continue;
-        const gid=Date.now()+i+1;
-        await sb("execution_goals","POST",{id:gid,project_id:pid2,title:goalForms[i].title,description:goalForms[i].description,assignee:goalForms[i].assignee,order_num:i});
-        newGoals.push({id:gid,projectId:pid2,title:goalForms[i].title,description:goalForms[i].description,assignee:goalForms[i].assignee,sortOrder:i});
+      if(editingProj&&pid){
+        // 기존 프로젝트 수정
+        await sb("projects","PATCH",{title:projForm.title,assignee:projForm.assignee,start_date:projForm.startDate||null,end_date:projForm.endDate||null},`?id=eq.${pid}`);
+        setProjects(ps=>ps.map(p=>p.id===pid?{...p,...projForm}:p));
+        const updatedGoals=[...execGoals.filter(g=>g.projectId!==pid)];
+        for(let i=0;i<goalForms.length;i++){
+          const g=goalForms[i];
+          if(!g.title.trim()) continue;
+          if(g.isNew){
+            const gid=Date.now()+i+1;
+            await sb("execution_goals","POST",{id:gid,project_id:pid,title:g.title,description:g.description,assignee:g.assignee,sort_order:i});
+            updatedGoals.push({id:gid,projectId:pid,title:g.title,description:g.description||"",assignee:g.assignee||"",sortOrder:i});
+          }else{
+            await sb("execution_goals","PATCH",{title:g.title,description:g.description,assignee:g.assignee,sort_order:i},`?id=eq.${g.id}`);
+            updatedGoals.push({id:g.id,projectId:pid,title:g.title,description:g.description||"",assignee:g.assignee||"",sortOrder:i});
+          }
+        }
+        setExecGoals(updatedGoals);
+        alert("변경사항 저장 완료!");
+      }else{
+        // 새 프로젝트 추가
+        const pid2=Date.now();
+        await sb("projects","POST",{id:pid2,title:projForm.title,assignee:projForm.assignee,start_date:projForm.startDate||null,end_date:projForm.endDate||null});
+        const newGoals=[];
+        for(let i=0;i<goalForms.length;i++){
+          if(!goalForms[i].title.trim()) continue;
+          const gid=Date.now()+i+1;
+          await sb("execution_goals","POST",{id:gid,project_id:pid2,title:goalForms[i].title,description:goalForms[i].description,assignee:goalForms[i].assignee,sort_order:i});
+          newGoals.push({id:gid,projectId:pid2,title:goalForms[i].title,description:goalForms[i].description||"",assignee:goalForms[i].assignee||"",sortOrder:i});
+        }
+        setProjects(p=>[...p,{id:pid2,...projForm}]);
+        setExecGoals(g=>[...g,...newGoals]);
+        setSelProject(pid2);
+        setEditingProj(true);
+        alert("프로젝트 저장 완료!");
       }
-      setProjects(p=>[...p,{id:pid2,...projForm}]);
-      setExecGoals(g=>[...g,...newGoals]);
-      setSelProject(pid2);
-      setProjForm({title:"",assignee:"",startDate:"",endDate:""});
-      setGoalForms([{title:"",description:"",assignee:""}]);
-      setTab("week");
-      alert("프로젝트 저장 완료!");
     }catch(e){alert("저장 실패: "+e.message);}
     setSaving(false);
   };
@@ -1971,67 +1991,81 @@ function GoalManage({projects,execGoals,weeklyChecks,setProjects,setExecGoals,se
       {/* 프로젝트 설정 탭 */}
       {tab==="proj"&&(
         <div>
-          {/* 기존 프로젝트 목록 */}
-          {projects.length>0&&(
-            <>
-              <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8,fontWeight:600,letterSpacing:0.5}}>기존 프로젝트</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
-                {projects.map(p=>(
-                  <div key={p.id} style={{padding:"8px 14px",border:"0.5px solid #E5E7EB",borderRadius:8,background:"#fff",display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:13,fontWeight:600,color:"#111827"}}>{p.title}</span>
-                    {p.assignee&&<span style={{fontSize:11,color:"#9CA3AF"}}>{p.assignee}</span>}
-                    <span style={{padding:"2px 7px",borderRadius:20,background:"#F3E8FF",color:PURPLE,fontSize:10}}>
-                      {execGoals.filter(g=>g.projectId===p.id).length}개 목표
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          {/* 프로젝트 탭 선택 */}
+          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+            {projects.map(p=>(
+              <button key={p.id} onClick={()=>{setSelProject(p.id);setProjForm({title:p.title,assignee:p.assignee||"",startDate:p.startDate||"",endDate:p.endDate||""});setGoalForms(execGoals.filter(g=>g.projectId===p.id).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(g=>({id:g.id,title:g.title,description:g.description||"",assignee:g.assignee||"",isNew:false})));setEditingProj(true);}}
+                style={{padding:"6px 14px",borderRadius:20,border:`0.5px solid ${pid===p.id?PURPLE:"#E5E7EB"}`,background:pid===p.id?"#F3E8FF":"#fff",color:pid===p.id?PURPLE:"#6B7280",fontSize:12,fontWeight:pid===p.id?600:400,cursor:"pointer"}}>
+                {p.title}
+              </button>
+            ))}
+            <button onClick={()=>{setSelProject(null);setEditingProj(false);setProjForm({title:"",assignee:"",startDate:"",endDate:""});setGoalForms([{title:"",description:"",assignee:"",isNew:true}]);}}
+              style={{padding:"6px 14px",borderRadius:20,border:"0.5px dashed #D1D5DB",background:"transparent",color:"#9CA3AF",fontSize:12,cursor:"pointer"}}>
+              + 새 프로젝트
+            </button>
+          </div>
 
-          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8,fontWeight:600,letterSpacing:0.5}}>새 프로젝트 추가</div>
+          {/* 프로젝트 전체 판 */}
           <div style={C.card}>
-            <div style={{padding:"11px 14px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC"}}>
-              <span style={{fontSize:13,fontWeight:600,color:"#4C1D95"}}>프로젝트 기본 정보</span>
+            <div style={{padding:"12px 16px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#4C1D95"}}>{editingProj?proj?.title||"프로젝트":"새 프로젝트 추가"}</span>
+              {editingProj&&proj&&(
+                <button onClick={async()=>{if(!window.confirm("프로젝트를 삭제하시겠습니까?"))return;await sb("projects","DELETE",null,`?id=eq.${proj.id}`);setProjects(ps=>ps.filter(p=>p.id!==proj.id));setExecGoals(gs=>gs.filter(g=>g.projectId!==proj.id));setSelProject(null);setEditingProj(false);setProjForm({title:"",assignee:"",startDate:"",endDate:""});setGoalForms([{title:"",description:"",assignee:"",isNew:true}]);}}
+                  style={{padding:"4px 10px",borderRadius:6,border:"0.5px solid #F7C1C1",background:"#FEF2F2",color:"#DC2626",fontSize:11,cursor:"pointer"}}>
+                  🗑 프로젝트 삭제
+                </button>
+              )}
             </div>
-            <div style={{padding:"14px"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+
+            {/* 기본 정보 */}
+            <div style={{padding:"14px 16px",borderBottom:"0.5px solid #E5E7EB"}}>
+              <div style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginBottom:10,letterSpacing:0.3}}>기본 정보</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 <div><label style={C.lbl}>프로젝트명 *</label><input style={C.inp} value={projForm.title} onChange={e=>setProjForm(f=>({...f,title:e.target.value}))} placeholder="예: 피카소 릴스"/></div>
                 <div><label style={C.lbl}>담당자</label><input style={C.inp} value={projForm.assignee} onChange={e=>setProjForm(f=>({...f,assignee:e.target.value}))} placeholder="담당자 이름"/></div>
                 <div><label style={C.lbl}>시작일</label><input style={C.inp} type="date" value={projForm.startDate} onChange={e=>setProjForm(f=>({...f,startDate:e.target.value}))}/></div>
                 <div><label style={C.lbl}>종료일</label><input style={C.inp} type="date" value={projForm.endDate} onChange={e=>setProjForm(f=>({...f,endDate:e.target.value}))}/></div>
               </div>
             </div>
-          </div>
 
-          <div style={C.card}>
-            <div style={{padding:"11px 14px",background:"#F3E8FF",borderBottom:"0.5px solid #C084FC",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:13,fontWeight:600,color:"#4C1D95"}}>실행목표 설정</span>
-              <span style={{fontSize:11,color:PURPLE}}>3~4개 권장</span>
-            </div>
-            <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:8}}>
-              {goalForms.map((g,i)=>(
-                <div key={i} style={{border:"0.5px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
-                  <div style={{padding:"8px 12px",background:"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{width:20,height:20,borderRadius:"50%",background:"#F3E8FF",color:PURPLE,fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-                    <input style={{flex:1,border:"none",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",outline:"none",color:"#111827"}} value={g.title} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,title:e.target.value}:f))} placeholder="실행목표 이름"/>
-                    {goalForms.length>1&&<button onClick={()=>setGoalForms(fs=>fs.filter((_,j)=>j!==i))} style={{border:"none",background:"none",color:"#9CA3AF",cursor:"pointer",fontSize:18,padding:"0 2px"}}>×</button>}
+            {/* 실행목표 목록 */}
+            <div style={{padding:"14px 16px"}}>
+              <div style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginBottom:10,letterSpacing:0.3}}>실행목표 <span style={{fontWeight:400}}>(3~4개 권장)</span></div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {goalForms.map((g,i)=>(
+                  <div key={g.id||i} style={{border:`0.5px solid ${g.isNew?"#C084FC":"#E5E7EB"}`,borderRadius:8,overflow:"hidden",background:g.isNew?"#FEFCFF":"#fff"}}>
+                    <div style={{padding:"8px 12px",background:g.isNew?"#F3E8FF":"#F9FAFB",borderBottom:"0.5px solid #E5E7EB",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:20,height:20,borderRadius:"50%",background:"#F3E8FF",color:PURPLE,fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                      <input style={{flex:1,border:"none",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",outline:"none",color:"#111827"}}
+                        value={g.title} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,title:e.target.value}:f))}
+                        placeholder="실행목표 이름"/>
+                      {g.isNew&&<span style={{fontSize:10,color:PURPLE,background:"#F3E8FF",padding:"2px 6px",borderRadius:10}}>신규</span>}
+                      <button onClick={async()=>{
+                        if(!g.isNew){
+                          if(!window.confirm("실행목표를 삭제하시겠습니까?"))return;
+                          await sb("execution_goals","DELETE",null,`?id=eq.${g.id}`);
+                          setExecGoals(gs=>gs.filter(eg=>eg.id!==g.id));
+                        }
+                        setGoalForms(fs=>fs.filter((_,j)=>j!==i));
+                      }} style={{border:"none",background:"none",color:"#9CA3AF",cursor:"pointer",fontSize:18,padding:"0 2px",flexShrink:0}}>×</button>
+                    </div>
+                    <div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <div><label style={C.lbl}>세부 설명</label><input style={C.inp} value={g.description} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,description:e.target.value}:f))} placeholder="간단한 설명"/></div>
+                      <div><label style={C.lbl}>담당자</label><input style={C.inp} value={g.assignee} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,assignee:e.target.value}:f))} placeholder="담당자"/></div>
+                    </div>
                   </div>
-                  <div style={{padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <div><label style={C.lbl}>세부 설명</label><input style={C.inp} value={g.description} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,description:e.target.value}:f))} placeholder="간단한 설명"/></div>
-                    <div><label style={C.lbl}>담당자</label><input style={C.inp} value={g.assignee} onChange={e=>setGoalForms(fs=>fs.map((f,j)=>j===i?{...f,assignee:e.target.value}:f))} placeholder="담당자"/></div>
-                  </div>
-                </div>
-              ))}
-              <button onClick={()=>setGoalForms(f=>[...f,{title:"",description:"",assignee:""}])}
-                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",border:"0.5px dashed #D1D5DB",borderRadius:8,color:"#9CA3AF",fontSize:12,cursor:"pointer",background:"transparent"}}>
-                + 실행목표 추가
-              </button>
+                ))}
+                <button onClick={()=>setGoalForms(f=>[...f,{title:"",description:"",assignee:"",isNew:true}])}
+                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",border:"0.5px dashed #C084FC",borderRadius:8,color:PURPLE,fontSize:12,cursor:"pointer",background:"#FEFCFF"}}>
+                  + 실행목표 추가
+                </button>
+              </div>
             </div>
-            <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"12px 14px",borderTop:"0.5px solid #E5E7EB"}}>
+
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"12px 16px",borderTop:"0.5px solid #E5E7EB"}}>
               <button onClick={saveProject} disabled={saving}
                 style={{padding:"9px 20px",borderRadius:8,border:"none",background:PURPLE,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",opacity:saving?0.6:1}}>
-                {saving?"저장 중...":"프로젝트 저장"}
+                {saving?"저장 중...":editingProj?"변경사항 저장":"프로젝트 저장"}
               </button>
             </div>
           </div>
