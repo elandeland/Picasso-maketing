@@ -156,8 +156,8 @@ const fmtFull = (n) => (n||0).toLocaleString();
 const effectiveViews = (item) => {
   const base = item.views||0;
   const offset = item.viewsOffset||0;
-  // Instagram Post만 좋아요×100 환산 (Reel은 조회수 직접 사용)
-  const likeBonus = item.platform==="Instagram Post" ? Math.max(0,item.likes||0)*100 : 0;
+  // Instagram(Reel·Post 모두) 좋아요×100 환산. likes=-1은 0 처리
+  const likeBonus = item.platform?.includes("Instagram") ? Math.max(0,item.likes||0)*100 : 0;
   return base + offset + likeBonus;
 };
 const detectPlatform = (url="") => {
@@ -842,7 +842,7 @@ function Dashboard({contents,viewHistory,monthlyGoals,onOpenRegister}) {
         </div>
         <div style={{...C.card,padding:"18px 20px",borderTop:"3px solid "+RED}}>
           <div style={{fontSize:11,color:"#6B7280",fontWeight:600,marginBottom:6}}>누적 조회수</div>
-          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews+500000)}</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#111827"}}>{fmtFull(totalViews+670000)}</div>
           <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>전체 플랫폼 합계</div>
         </div>
       </div>
