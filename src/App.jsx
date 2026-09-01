@@ -156,7 +156,8 @@ const fmtFull = (n) => (n||0).toLocaleString();
 const effectiveViews = (item) => {
   const base = item.views||0;
   const offset = item.viewsOffset||0;
-  const likeBonus = item.platform?.includes("Instagram") ? (item.likes||0)*100 : 0;
+  // Instagram Post만 좋아요×100 환산 (Reel은 조회수 직접 사용)
+  const likeBonus = item.platform==="Instagram Post" ? Math.max(0,item.likes||0)*100 : 0;
   return base + offset + likeBonus;
 };
 const detectPlatform = (url="") => {
